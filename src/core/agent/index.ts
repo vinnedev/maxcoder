@@ -9,6 +9,7 @@ import type { Session } from '../../sessions/index.ts'
 import { getAgentType } from '../../tools/subagent/index.ts'
 import { buildSystemPrompt } from '../prompt/index.ts'
 import { executeTool, toolDefs, toolInfos, type Tool, type ToolContext } from '../../tools.ts'
+import { evaluateToolCall } from '../../safety/index.ts'
 
 export type AgentEvent =
   | { type: 'stream'; text: string; depth: number }
@@ -145,13 +146,20 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
       // Enforce the allow-list: execution resolves from the global registry, so a fabricated
       // call to a tool absent from `p.tools` (e.g. a mutating tool in a read-only background task)
       // must be rejected here — otherwise the `mutating` guard never fires (tool is undefined).
+      // Hard blocks (destructive shell, secret reads) are enforced inside executeTool; here we
+      // surface the guard's 'confirm' verdict (e.g. editing a critical/build file).
       let result: string
       if (!tool) {
         result = `ERROR: tool "${call.name}" is not available in this context.`
-      } else if (tool.mutating && p.confirm && !(await p.confirm(call))) {
-        result = '(denied by user)'
       } else {
-        result = await executeTool(call.name, call.args, ctx)
+        const guard = evaluateToolCall(tool, call.args, { allowSecrets: ctx.allowSecrets })
+        if (guard.action === 'confirm' && !p.confirm) p.onEvent({ type: 'info', text: `⚠ ${guard.reason}` })
+        const mustConfirm = !!p.confirm && (tool.mutating || guard.action === 'confirm')
+        if (mustConfirm && !(await p.confirm!(call))) {
+          result = '(denied by user)'
+        } else {
+          result = await executeTool(call.name, call.args, ctx)
+        }
       }
       p.onEvent({ type: 'tool_result', name: call.name, result, depth })
       const toolMsg: ChatMessage = { role: 'tool', content: result }

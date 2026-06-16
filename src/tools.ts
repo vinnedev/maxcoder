@@ -6,23 +6,40 @@ import * as path from 'node:path'
 import { exists, listDir, readText, sh, shell, writeText } from './shared/fs/index.ts'
 import type { ToolDef } from './providers/ollama/index.ts'
 import { DATETIME_DESCRIPTION, DATETIME_SCHEMA, datetimeTool } from './tools/datetime/index.ts'
+import { evaluateToolCall } from './safety/index.ts'
 
 export interface ToolContext {
   cwd: string
   model: string
   signal?: AbortSignal
   depth: number // subagent recursion depth (0 = main)
+  allowSecrets?: boolean // user explicitly permitted secret-file access (safety override)
   runSubAgent?: (task: string, opts: { agentType?: string }) => Promise<string>
 }
 
 export type ToolSource = 'builtin' | 'skill' | 'agent' | 'mcp' | 'web'
 
+export type ToolRisk = 'safe' | 'low' | 'moderate' | 'high' | 'destructive'
+
+/** Optional, declarative metadata for safety/scheduling. All fields default conservatively. */
+export interface ToolPolicy {
+  readOnly?: boolean // does not modify disk/state
+  altersDisk?: boolean // creates/edits/deletes files
+  executesCommand?: boolean // runs a shell/process
+  risk?: ToolRisk
+  timeoutMs?: number
+  maxRetries?: number
+  requiresConfirm?: boolean
+}
+
 export interface Tool {
   name: string
   description: string
-  parameters: Record<string, unknown>
+  parameters: Record<string, unknown> // input schema (JSON Schema)
   mutating: boolean
   source: ToolSource
+  policy?: ToolPolicy
+  outputSchema?: Record<string, unknown>
   run: (args: Record<string, unknown>, ctx: ToolContext) => string | Promise<string>
 }
 
@@ -54,6 +71,10 @@ export async function executeTool(
 ): Promise<string> {
   const tool = REGISTRY.get(name)
   if (!tool) return `ERROR: unknown tool "${name}". Available: ${allTools().map(t => t.name).join(', ')}`
+  // Safety net: hard-block destructive commands and secret-file access on every execution path
+  // (main loop, subagents, background/orchestrated tasks). Confirmation gates live in the UI loop.
+  const guard = evaluateToolCall(tool, args, { allowSecrets: ctx.allowSecrets })
+  if (guard.action === 'block') return `BLOCKED by safety policy: ${guard.reason}`
   try {
     return await tool.run(args, ctx)
   } catch (e) {
@@ -124,6 +145,7 @@ const BUILTINS: Tool[] = [
     description: DATETIME_DESCRIPTION,
     mutating: false,
     source: 'builtin',
+    policy: { readOnly: true, risk: 'safe' },
     parameters: DATETIME_SCHEMA,
     run: args => datetimeTool(args as Parameters<typeof datetimeTool>[0]),
   },
@@ -132,6 +154,7 @@ const BUILTINS: Tool[] = [
     description: 'Read a UTF-8 text file and return its contents (truncated if large).',
     mutating: false,
     source: 'builtin',
+    policy: { readOnly: true, risk: 'safe' },
     parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
     run: async (args, ctx) => {
       const p = abs(ctx, str(args, 'path'))
@@ -145,6 +168,7 @@ const BUILTINS: Tool[] = [
     description: 'Create or overwrite a text file with the given content.',
     mutating: true,
     source: 'builtin',
+    policy: { altersDisk: true, risk: 'moderate', requiresConfirm: true },
     parameters: {
       type: 'object',
       properties: { path: { type: 'string' }, content: { type: 'string' } },
@@ -163,6 +187,7 @@ const BUILTINS: Tool[] = [
     description: 'Replace the first exact occurrence of old_string with new_string in a file.',
     mutating: true,
     source: 'builtin',
+    policy: { altersDisk: true, risk: 'moderate', requiresConfirm: true },
     parameters: {
       type: 'object',
       properties: { path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } },
@@ -184,6 +209,7 @@ const BUILTINS: Tool[] = [
     description: 'List files and directories at a path (default ".").',
     mutating: false,
     source: 'builtin',
+    policy: { readOnly: true, risk: 'safe' },
     parameters: { type: 'object', properties: { path: { type: 'string' } }, required: [] },
     run: async (args, ctx) => {
       const rel = typeof args.path === 'string' && args.path ? args.path : '.'
@@ -202,6 +228,7 @@ const BUILTINS: Tool[] = [
     description: 'Search file contents for a pattern (recursive).',
     mutating: false,
     source: 'builtin',
+    policy: { readOnly: true, risk: 'low', timeoutMs: 20_000 },
     parameters: {
       type: 'object',
       properties: { pattern: { type: 'string' }, path: { type: 'string' } },
@@ -221,6 +248,7 @@ const BUILTINS: Tool[] = [
     description: 'Run a shell command in the working directory and return its output.',
     mutating: true,
     source: 'builtin',
+    policy: { executesCommand: true, risk: 'high', requiresConfirm: true, timeoutMs: 60_000 },
     parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
     run: (args, ctx) => {
       const r = shell(str(args, 'command'), { cwd: ctx.cwd, timeout: 60_000 })

@@ -35,6 +35,18 @@ test('a tool that throws is caught and returned as an error string', async () =>
   expect(r).toMatch(/ERROR running read_file|missing/i)
 })
 
+test('executeTool hard-blocks destructive commands and secret reads on every path', async () => {
+  const cmd = await executeTool('run_bash', { command: 'rm -rf /' }, ctx)
+  expect(cmd).toMatch(/^BLOCKED by safety policy/)
+
+  const secret = await executeTool('read_file', { path: '.env' }, ctx)
+  expect(secret).toMatch(/^BLOCKED by safety policy/)
+
+  // explicit opt-in lets a secret read through (the file simply won't exist here)
+  const allowed = await executeTool('read_file', { path: '.env' }, { ...ctx, allowSecrets: true })
+  expect(allowed).not.toMatch(/^BLOCKED/)
+})
+
 test('datetime tool resolves via the registry', async () => {
   const r = JSON.parse(await executeTool('datetime', { operation: 'now', timezone: 'UTC', locale: 'en-US' }, ctx))
   expect(r.timezone).toBe('UTC')
