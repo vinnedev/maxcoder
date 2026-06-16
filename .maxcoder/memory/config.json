@@ -1,0 +1,20 @@
+{
+  "autoImprove": {
+    "enabled": true,
+    "schedulerEnabled": true,
+    "requireApproval": true,
+    "minSessionAgeMinutes": 10,
+    "minConfidence": "medium",
+    "autoApproveTypes": [
+      "concept",
+      "procedure",
+      "note",
+      "slot_update"
+    ],
+    "manualApprovalTypes": [
+      "rule",
+      "decision",
+      "gotcha"
+    ]
+  }
+}

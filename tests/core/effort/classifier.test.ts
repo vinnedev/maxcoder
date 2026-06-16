@@ -8,6 +8,7 @@ test('deterministic floors: critical files → max, command/core-agent/refactor 
   expect(effortFloor('run a command to install deps')).toBe('high')
   expect(effortFloor('change the system prompt')).toBe('high')
   expect(effortFloor('refactor the parser module')).toBe('high')
+  expect(effortFloor('implement auto-improve memory reviewer')).toBe('max')
   expect(effortFloor('what does this function do?')).toBe(null)
 })
 

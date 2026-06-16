@@ -22,7 +22,9 @@ import { Semaphore } from './shared/async/semaphore.ts'
 import { loadConfig, saveConfig, type EffortSetting } from './core/config/index.ts'
 import { EffortController } from './core/effort/controller.ts'
 import { type EffortAssessment } from './core/effort/classifier.ts'
-import { EFFORT_PROFILES } from './core/effort/profiles.ts'
+import { EFFORT_PROFILES, maxEffort } from './core/effort/profiles.ts'
+import { AutoImproveReviewer, HandoffManager, MemoryApprovalQueue, MemoryCurator, MemoryIndexer, MemoryStore, MEMORY_REVIEWER_PROMPT, SessionRecorder, initMemoryWorkspace, type DurableMemoryType } from './core/memory/index.ts'
+import { routeTask } from './core/intent/index.ts'
 import { createAdapter } from './models/index.ts'
 import { RunRecorder, jsonlSink } from './core/telemetry/index.ts'
 import { Tui } from './ui/tui.ts'
@@ -183,6 +185,107 @@ async function cleanSessionsCommand(state: State, arg: string, p: (s: string) =>
   for (const e of r.errors) p(`${c.red}failed:${c.reset} ${e.file} ${c.gray}${e.message}${c.reset}\n`)
 }
 
+async function memoryCommand(state: State, arg: string, p: (s: string) => void): Promise<void> {
+  await initMemoryWorkspace(state.cwd)
+  const [sub = 'help', ...rest] = arg.trim().split(/\s+/)
+  const tail = rest.join(' ')
+  const queue = new MemoryApprovalQueue(state.cwd)
+  if (sub === 'help') {
+    p(`${c.bold}/memory${c.reset} pending | approve <id> | reject <id> | show <id> | diff <id> | apply <id> | search <query> | write <type> <title> | forget <path> | rebuild-index | curate | health | lint | handoff | auto-improve <session.md>\n`)
+    return
+  }
+  if (sub === 'pending') {
+    const ids = await queue.list()
+    p(ids.length ? ids.map(id => `  ${c.cyan}${id}${c.reset}`).join('\n') + '\n' : `${c.gray}(no pending memory proposals)${c.reset}\n`)
+    return
+  }
+  if (sub === 'show') {
+    const text = await queue.show(tail)
+    p(text ? text + '\n' : `${c.red}not found:${c.reset} ${tail}\n`)
+    return
+  }
+  if (sub === 'diff') {
+    p((await queue.diff(tail)) + '\n')
+    return
+  }
+  if (sub === 'approve' || sub === 'apply') {
+    const applied = await queue.apply(tail)
+    p(`${c.green}applied${c.reset} ${applied}\n`)
+    return
+  }
+  if (sub === 'reject') {
+    const [id, ...why] = rest
+    await queue.reject(id, why.join(' ') || 'manual rejection')
+    p(`${c.green}rejected${c.reset} ${id}\n`)
+    return
+  }
+  if (sub === 'search') {
+    const results = await new MemoryIndexer(state.cwd).search(tail, { limit: 10 })
+    if (!results.length) {
+      p(`${c.gray}(no memory results)${c.reset}\n`)
+      return
+    }
+    for (const r of results) p(`  ${c.cyan}${r.path}${c.reset} ${c.gray}[${r.type}]${c.reset} ${r.title}\n    ${r.summary || r.excerpt}\n`)
+    return
+  }
+  if (sub === 'write') {
+    const [type, ...titleParts] = rest
+    const title = titleParts.join(' ').trim()
+    const durableTypes: DurableMemoryType[] = ['decision', 'gotcha', 'procedure', 'concept', 'rule', 'note']
+    if (!durableTypes.includes(type as DurableMemoryType) || !title) {
+      p(`${c.yellow}usage:${c.reset} /memory write <decision|gotcha|procedure|concept|rule|note> <title>\n`)
+      return
+    }
+    const rel = await new MemoryStore(state.cwd).writeMemory({
+      type: type as DurableMemoryType,
+      title,
+      body: `## Summary\n\n${title}\n\n## Details\n\nManual memory stub. Edit this page with evidence-backed details before relying on it.`,
+      evidence: [{ kind: 'user_instruction', ref: 'manual /memory write', quote: title }],
+      confidence: type === 'rule' ? 'high' : 'medium',
+    })
+    await new MemoryIndexer(state.cwd).indexPage(rel)
+    p(`${c.green}created${c.reset} ${rel}\n`)
+    return
+  }
+  if (sub === 'forget') {
+    await new MemoryStore(state.cwd).deletePage(tail, { manual: true, reason: 'manual /memory forget' })
+    await new MemoryIndexer(state.cwd).removePage(tail)
+    p(`${c.green}forgot${c.reset} ${tail} ${c.gray}(revision kept in audit)${c.reset}\n`)
+    return
+  }
+  if (sub === 'rebuild-index') {
+    const r = await new MemoryIndexer(state.cwd).rebuildIndex()
+    p(`${c.green}rebuilt index${c.reset}: ${r.indexed} page(s)\n`)
+    return
+  }
+  if (sub === 'curate') {
+    const rel = await new MemoryCurator(state.cwd).curate()
+    p(`${c.green}curator report${c.reset} ${rel}\n`)
+    return
+  }
+  if (sub === 'health') {
+    const h = await new MemoryCurator(state.cwd).health()
+    p(`${c.green}memory health${c.reset}: ${h.pages} page(s), ${h.pending} pending, ${h.issues} lint issue(s)\n`)
+    return
+  }
+  if (sub === 'lint') {
+    const issues = await new MemoryCurator(state.cwd).lint()
+    p(issues.length ? issues.map(i => `  ${c.yellow}!${c.reset} ${i}`).join('\n') + '\n' : `${c.green}memory lint clean${c.reset}\n`)
+    return
+  }
+  if (sub === 'handoff') {
+    const h = await new HandoffManager(state.cwd).latestPending()
+    p(h ? `${c.cyan}${h.id}${c.reset}\n${h.summary}\n` : `${c.gray}(no pending handoff)${c.reset}\n`)
+    return
+  }
+  if (sub === 'auto-improve') {
+    const ids = await new AutoImproveReviewer(state.cwd).createPendingFromSession(tail)
+    p(`${c.green}created${c.reset} ${ids.length} pending proposal(s)\n`)
+    return
+  }
+  p(`${c.red}unknown /memory command:${c.reset} ${sub}\n`)
+}
+
 const SLASH_COMMANDS: Record<string, SlashHandler> = {
   help: (_s, _a, p) => void p(helpText() + '\n'),
   exit: () => false,
@@ -217,6 +320,9 @@ const SLASH_COMMANDS: Record<string, SlashHandler> = {
   },
   clean: async (state, arg, p) => {
     await cleanSessionsCommand(state, arg, p)
+  },
+  memory: async (state, arg, p) => {
+    await memoryCommand(state, arg, p)
   },
   tools: (_state, _a, p) => {
     for (const t of allTools()) p(`  ${c.blue}${t.name}${c.reset} ${c.gray}[${t.source}] ${t.description.slice(0, 80)}${c.reset}\n`)
@@ -390,6 +496,38 @@ async function tui(state: State, notes: string[]) {
   }
   const effort = new EffortController(cfg, { assess })
 
+  // Model-backed memory reviewer (auto-improve). Runs off the hot path; every proposal it returns is
+  // still gated by MemoryProposalValidator + the approval queue, so a hallucination cannot persist.
+  const memoryProposer = async (input: { session: string; source: string; recentMemory: string[] }) => {
+    try {
+      const { data } = await mkAdapter().generateJson<{
+        proposals?: unknown[]
+        rejected_candidates?: { summary: string; reason: string }[]
+      }>({
+        messages: [
+          {
+            role: 'system',
+            content:
+              MEMORY_REVIEWER_PROMPT +
+              '\n\nSchema: {"proposals":[{"type":"decision|gotcha|procedure|concept|rule|note|slot_update",' +
+              '"path":"string","title":"string","body":"string","evidence":[{"kind":"session|file|command|test|user_instruction","ref":"string","quote":"string"}],' +
+              '"confidence":"low|medium|high","reason":"string","should_require_approval":true}],"rejected_candidates":[{"summary":"string","reason":"string"}]}',
+          },
+          {
+            role: 'user',
+            content: `Recent memory pages:\n${input.recentMemory.join('\n') || '(none)'}\n\nCompleted session (${input.source}):\n${input.session.slice(0, 6_000)}`,
+          },
+        ],
+      })
+      return {
+        proposals: Array.isArray(data?.proposals) ? (data.proposals as never[]) : [],
+        rejected_candidates: Array.isArray(data?.rejected_candidates) ? data.rejected_candidates : [],
+      }
+    } catch {
+      return { proposals: [], rejected_candidates: [] }
+    }
+  }
+
   // A routing suggestion awaiting the user's y/N. The original task is never lost.
   let pending: { task: string; route: Route } | null = null
 
@@ -397,8 +535,16 @@ async function tui(state: State, notes: string[]) {
     const ac = new AbortController()
     currentAbort = ac
     const rec = new RunRecorder(jsonlSink(state.cwd), { model: state.model, effort: effort.setting, task })
+    const resolved = await effort.resolve(task)
+    const memoryRecorder = resolved.level === 'high' || resolved.level === 'max'
+      ? new SessionRecorder(state.cwd, state.session.id)
+      : null
+    if (memoryRecorder) {
+      void memoryRecorder.record('session_started', { model: state.model, effort: resolved.level })
+      void memoryRecorder.record('user_prompt', { prompt: task })
+    }
     try {
-      await runAgent({
+      const result = await runAgent({
         task,
         model: state.model,
         numCtx: state.numCtx,
@@ -406,6 +552,7 @@ async function tui(state: State, notes: string[]) {
         tools: allTools(),
         session: state.session,
         signal: ac.signal,
+        effortLevel: resolved.level,
         onEvent: e => {
           if (e.type === 'usage') {
             state.lastTokens = e.tokens
@@ -416,7 +563,17 @@ async function tui(state: State, notes: string[]) {
             ui.streamDelta(e.text, e.depth)
             return
           }
-          if (e.type === 'tool_result') rec.tool(e.name, !/^(ERROR|BLOCKED)/.test(e.result))
+          if (e.type === 'tool_call') {
+            void memoryRecorder?.record('tool_called', { name: e.name, args: e.args })
+            if (e.name === 'read_file' && typeof e.args.path === 'string') void memoryRecorder?.record('file_read', { path: e.args.path })
+            if ((e.name === 'write_file' || e.name === 'edit_file') && typeof e.args.path === 'string') void memoryRecorder?.record('file_changed', { path: e.args.path })
+            if (e.name === 'run_bash' && typeof e.args.command === 'string') void memoryRecorder?.record('command_run', { command: e.args.command })
+          }
+          if (e.type === 'tool_result') {
+            rec.tool(e.name, !/^(ERROR|BLOCKED)/.test(e.result))
+            void memoryRecorder?.record('tool_result', { name: e.name, ok: !/^(ERROR|BLOCKED)/.test(e.result), result: e.result.slice(0, 1000) })
+            if (/^(ERROR|BLOCKED)|\b(exit [1-9]\d*)\b/i.test(e.result)) void memoryRecorder?.record('error_seen', { tool: e.name, message: e.result.slice(0, 1000) })
+          }
           if (e.type === 'final') {
             if (!ui.finishStream(e.text, e.depth)) {
               const s = formatEvent(e)
@@ -429,8 +586,23 @@ async function tui(state: State, notes: string[]) {
           if (s) ui.print(s)
         },
       })
+      if (memoryRecorder) {
+        const sessionRel = await memoryRecorder.finish({ userGoal: task, outcome: result || 'No final text returned.' })
+        await new HandoffManager(state.cwd).create(state.session.id, {
+          whereWeLeftOff: result || 'Task completed without final text.',
+          currentFocus: task,
+          relevantMemoryPages: (await new MemoryIndexer(state.cwd).search(task, { limit: 5 })).map(r => r.path),
+        })
+        if (resolved.level === 'high' || resolved.level === 'max') {
+          // Off the hot path: the model proposes durable memory; validator + approval queue gate it.
+          setTimeout(() => {
+            void new AutoImproveReviewer(state.cwd).createPendingFromSession(sessionRel, { propose: memoryProposer }).catch(() => {})
+          }, 0)
+        }
+      }
       rec.end(true)
     } catch (err) {
+      void memoryRecorder?.record('error_seen', { message: err instanceof Error ? err.message : String(err) })
       rec.end(false, err instanceof Error ? err.message : String(err))
       throw err
     } finally {
@@ -565,13 +737,16 @@ async function tui(state: State, notes: string[]) {
         runShellCommand(state, text, s => t.print(s.replace(/\n+$/, '')))
         return
       }
-      // Effort (auto mode only): classify and surface the chosen budget. Deterministic for floored or
-      // simple tasks; consults the model only when ambiguous. Budget enforcement in the loop is a later phase.
+      // Effort + intent (auto mode only): classify and surface the route + chosen budget. Deterministic
+      // for floored/simple tasks; consults the model only when ambiguous. Loop enforcement lands in P6.
       if (effort.setting === 'auto') {
         const r = await effort.resolve(text)
-        if (r.assessment) {
-          t.print(`${c.gray}⚙ effort:${c.reset} ${c.cyan}${r.level}${c.reset} ${c.gray}— ${r.assessment.reason}${c.reset}`)
-        }
+        const intentRoute = routeTask(text)
+        const level = maxEffort(r.level, intentRoute.minEffort)
+        t.print(
+          `${c.gray}⚙ ${c.reset}${c.cyan}${intentRoute.intent}${c.reset} ${c.gray}· effort ${c.reset}${c.cyan}${level}${c.reset}` +
+          `${r.assessment ? ` ${c.gray}— ${r.assessment.reason}${c.reset}` : ''}`,
+        )
       }
 
       // Normal prompt → route (suggest + confirm), then run. The heuristic decides obvious cases

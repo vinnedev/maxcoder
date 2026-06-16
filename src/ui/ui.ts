@@ -18,6 +18,7 @@ export const SLASH_COMMANDS = [
   '/agents',
   '/cost',
   '/effort',
+  '/memory',
   '/queue',
   '/qpause',
   '/qresume',
@@ -266,6 +267,7 @@ export function helpText(): string {
   ${c.cyan}/agents${c.reset}      list custom agent types
   ${c.cyan}/cost${c.reset}        show context usage
   ${c.cyan}/effort${c.reset}      show/set reasoning effort (low|medium|high|max|auto|explain)
+  ${c.cyan}/memory${c.reset}      search/write/approve/rebuild the long-term memory wiki
   ${c.cyan}/queue${c.reset}       list queued prompts (type while busy to enqueue)
   ${c.cyan}/qpause${c.reset}      pause/resume the queue · ${c.cyan}/qrm${c.reset} <id> · ${c.cyan}/qclear${c.reset}
   ${c.cyan}/bg${c.reset} <task>   run a task in the background (read-only) · ${c.cyan}/tasks${c.reset} · ${c.cyan}/cancel${c.reset} <id>

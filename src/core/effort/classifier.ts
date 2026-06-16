@@ -46,6 +46,8 @@ const CRITICAL_FILE =
 const COMMAND_EXEC = /\b(run a command|execute|terminal|shell command|chmod|permissions?|sudo|rm -rf|spawn|child process)\b/i
 // Touching the agent's own brain → at least high.
 const CORE_AGENT = /\b(system prompt|tool router|intent router|model adapter|guardrails?|prompt template)\b/i
+const MEMORY_SELF = /\b(memory|mem[oó]ria|auto-?improve|self-?improvement|handoff|sqlite fts|rag|wiki)\b/i
+const CORE_SURFACE = /\b(router|filesystem|shell|safety|tool|mcp|model adapter)\b/i
 // Wide structural change → at least high.
 const REFACTOR_WIDE = /\b(refactor|migrat(e|ion)|rewrite|overhaul|architecture|redesign)\b/i
 
@@ -56,6 +58,8 @@ const TOOL_INTENT = /\b(read|list|search|grep|run|fetch|file|directory|command)\
 
 /** The deterministic minimum effort a task demands (null = no floor). */
 export function effortFloor(task: string): EffortLevel | null {
+  if (MEMORY_SELF.test(task) && /\b(implement|change|update|modify|alter|integrat|criar|implementar|alterar|modificar)\b/i.test(task)) return 'max'
+  if (CORE_SURFACE.test(task) && /\b(bug|fix|refactor|architecture|implement|change|update|corrigir|arquitetura)\b/i.test(task)) return 'high'
   if (CRITICAL_FILE.test(task)) return 'max'
   if (COMMAND_EXEC.test(task) || CORE_AGENT.test(task) || REFACTOR_WIDE.test(task)) return 'high'
   return null

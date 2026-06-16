@@ -10,6 +10,8 @@ import { getAgentType } from '../../tools/subagent/index.ts'
 import { buildSystemPrompt } from '../prompt/index.ts'
 import { executeTool, toolDefs, toolInfos, type Tool, type ToolContext } from '../../tools.ts'
 import { evaluateToolCall } from '../../safety/index.ts'
+import { memoryContextForTask } from '../memory/index.ts'
+import type { EffortLevel } from '../effort/profiles.ts'
 
 export type AgentEvent =
   | { type: 'stream'; text: string; depth: number }
@@ -34,16 +36,19 @@ export interface RunAgentParams {
   maxTurns?: number
   signal?: AbortSignal
   adapter?: ModelAdapter // model is reached only through this; defaults to one bound to p.model
+  effortLevel?: EffortLevel
 }
 
 export async function runAgent(p: RunAgentParams): Promise<string> {
   const depth = p.depth ?? 0
   const maxTurns = p.maxTurns ?? 16
   const adapter = p.adapter ?? createAdapter(p.model, { contextWindow: p.numCtx })
+  const memoryContext = await memoryContextForTask(process.cwd(), p.task, { effort: p.effortLevel })
   const systemPrompt = await buildSystemPrompt({
     model: p.model,
     tools: toolInfos(p.tools),
     agentRole: p.agentRole,
+    memoryContext,
   })
 
   const ctx: ToolContext = {

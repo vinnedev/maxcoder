@@ -3,5 +3,17 @@ node_modules/
 *.log
 .DS_Store
 
-# Project-local agent state (config, caches, logs, plans, memory)
-.maxcoder/
+# Project-local agent state. Markdown wiki/config are versionable; indexes/logs are derived/local.
+.maxcoder/*
+!.maxcoder/memory/
+.maxcoder/memory/*
+!.maxcoder/memory/config.json
+!.maxcoder/memory/wiki/
+!.maxcoder/memory/wiki/**
+.maxcoder/memory/index/
+.maxcoder/memory/logs/
+.maxcoder/memory/plans/
+.maxcoder/memory/evals/
+.maxcoder/memory/handoffs/
+.maxcoder/memory/wiki/_audit/revisions/
+.maxcoder/memory/wiki/_audit/audit.jsonl

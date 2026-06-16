@@ -4,8 +4,10 @@ import { expect, test } from 'bun:test'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { allTools, executeTool, registerBuiltins, type ToolContext } from '../src/tools.ts'
+import { registerMemoryTools } from '../src/tools/memory/index.ts'
 
 registerBuiltins()
+registerMemoryTools()
 
 const cwd = path.join(os.tmpdir(), `maxcoder-tools-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 const ctx: ToolContext = { cwd, model: 'test', depth: 0 }
@@ -13,6 +15,9 @@ const ctx: ToolContext = { cwd, model: 'test', depth: 0 }
 test('registerBuiltins exposes the core tools', () => {
   const names = allTools().map(t => t.name)
   for (const n of ['datetime', 'read_file', 'write_file', 'edit_file', 'list_dir', 'grep', 'run_bash']) {
+    expect(names).toContain(n)
+  }
+  for (const n of ['memory_search', 'memory_write', 'memory_rebuild_index']) {
     expect(names).toContain(n)
   }
 })
@@ -51,4 +56,19 @@ test('datetime tool resolves via the registry', async () => {
   const r = JSON.parse(await executeTool('datetime', { operation: 'now', timezone: 'UTC', locale: 'en-US' }, ctx))
   expect(r.timezone).toBe('UTC')
   expect(typeof r.iso).toBe('string')
+})
+
+test('memory tools write, rebuild, and search the wiki index', async () => {
+  const written = JSON.parse(await executeTool('memory_write', {
+    type: 'concept',
+    title: 'Tool memory search',
+    body: '## Summary\n\nMemory tools expose searchable wiki pages.\n\n## Details\n\nAgents call memory_search before relevant work.',
+    evidence: [{ kind: 'user_instruction', ref: 'test', quote: 'consultar memória' }],
+    confidence: 'medium',
+  }, ctx))
+  expect(written.path).toBe('concepts/tool-memory-search.md')
+  const rebuilt = JSON.parse(await executeTool('memory_rebuild_index', {}, ctx))
+  expect(rebuilt.indexed).toBeGreaterThan(0)
+  const found = JSON.parse(await executeTool('memory_search', { query: 'searchable wiki pages', limit: 5 }, ctx))
+  expect(found.results.some((r: { path: string }) => r.path === written.path)).toBe(true)
 })

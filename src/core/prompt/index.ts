@@ -58,6 +58,7 @@ export interface SystemPromptInput {
   tools: ToolInfo[]
   includeGitStatus?: boolean
   agentRole?: string
+  memoryContext?: string
 }
 
 export async function buildSystemPrompt(input: SystemPromptInput): Promise<string> {
@@ -128,6 +129,21 @@ ${input.tools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
   if (learned) {
     blocks.push(`<learned_memory>\nLearned from past sessions (apply when relevant):\n\n${learned}\n</learned_memory>`)
   }
+
+  if (input.memoryContext?.trim()) {
+    blocks.push(`<relevant_memory>\nConsulted long-term memory before this task:\n\n${input.memoryContext.trim()}\n</relevant_memory>`)
+  }
+
+  blocks.push(
+    `<memory_policy>
+- Before relevant architecture, bug-fix, refactor, tool/router/model-adapter, safety, filesystem,
+  shell, MCP, RAG, or memory decisions, consult \`memory_search\`.
+- Before changing architecture, read relevant \`decisions/\`; before fixing bugs, read relevant
+  \`gotchas/\`; before running complex workflows, read relevant \`procedures/\`.
+- After learning something durable, propose a small evidence-backed memory with \`memory_write\` or
+  leave it in the approval queue. Do not save transient errors as rules. Never save secrets.
+</memory_policy>`,
+  )
 
   return blocks.join('\n\n')
 }

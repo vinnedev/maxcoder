@@ -7,6 +7,7 @@ Welcome to the Max Coder system documentation! This index helps you navigate the
 ### Quick Start
 - **[README](../readme.md)** — Quick start, build instructions, basic usage
 - **[Architecture Overview](./architecture.md)** — System design, layer overview, data flow
+- **[Code-Agent Architecture (tiny-model-first)](./code-agent-architecture.md)** — diagnosis, phased roadmap, acceptance criteria
 
 ### Deep Dives
 
@@ -32,12 +33,17 @@ What the agent can do:
 How you interact with Max Coder:
 - [CLI & UI](./modules/ui.md) — Commands, REPL, terminal rendering
 
+#### Tiny-model-first subsystems
+Building intelligence into the system around a small local model:
+- [Code-Agent Subsystems](./modules/code-agent.md) — model adapter, effort (`/effort`), intent router, safety guardrails, repo intelligence + RAG, memory, telemetry
+
 #### Foundation
 Utilities used everywhere:
 - [Shared Utilities](./modules/shared.md) — Config, errors, async, file system
 
 ### Reference
 - [Module Documentation Index](./modules.md) — Organized by functional area
+- [Background Orchestration Plan](./background-orchestration-plan.md) · [Queue System Plan](./queue-system-plan.md)
 
 ---
 
