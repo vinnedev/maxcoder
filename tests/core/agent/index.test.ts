@@ -7,11 +7,13 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { existsSync, rmSync } from 'node:fs'
 
-// The agent imports `chat` from the ollama provider at module load. Replace it with a
-// scripted fake BEFORE dynamically importing runAgent, so no network call happens.
+// The agent reaches the model via the ollama provider's `chat`. Replace ONLY `chat` with a scripted
+// fake (spreading the real module so other exports survive — mock.module is process-wide in Bun).
+import * as ollamaReal from '../../../src/providers/ollama/index.ts'
 let chatCalls = 0
 let scripted: Array<{ text: string; toolCalls: Array<{ name: string; args: Record<string, unknown> }> }> = []
 mock.module('../../../src/providers/ollama/index.ts', () => ({
+  ...ollamaReal,
   chat: async () => {
     const r = scripted[Math.min(chatCalls, scripted.length - 1)]
     chatCalls++

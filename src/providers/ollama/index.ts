@@ -84,6 +84,8 @@ export interface ChatOpts {
   messages: ChatMessage[]
   tools?: ToolDef[]
   temperature?: number
+  /** Constrain output: 'json' for JSON-mode, or a JSON schema object. Lifts tiny-model reliability. */
+  format?: 'json' | Record<string, unknown>
   onText?: (delta: string) => void
   signal?: AbortSignal
 }
@@ -95,6 +97,7 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
     stream: true,
     options: { num_ctx: numCtx(), temperature: opts.temperature ?? 0.1 },
   }
+  if (opts.format) body.format = opts.format
   if (opts.tools && opts.tools.length > 0) {
     body.tools = opts.tools.map(t => ({
       type: 'function',

@@ -1,7 +1,8 @@
 // Max Coder — context management: token estimation + auto-compaction.
 // Simplified analog of src/services/compact/* and src/query/tokenBudget.ts.
 
-import { chat, type ChatMessage } from '../../providers/ollama/index.ts'
+import type { ChatMessage } from '../../providers/ollama/index.ts'
+import type { ModelAdapter } from '../../models/index.ts'
 
 const KEEP_RECENT = 6 // messages kept verbatim after a compaction
 const COMPACT_THRESHOLD = 0.75 // compact when estimated usage exceeds this fraction of num_ctx
@@ -55,7 +56,7 @@ export interface CompactResult {
  */
 export async function compact(
   messages: ChatMessage[],
-  model: string,
+  adapter: ModelAdapter,
   numCtx: number,
 ): Promise<CompactResult> {
   const before = contextTokens(messages)
@@ -69,8 +70,7 @@ export async function compact(
     .map(m => `${m.role.toUpperCase()}: ${m.content}${m.tool_calls ? ' ' + JSON.stringify(m.tool_calls) : ''}`)
     .join('\n')
 
-  const res = await chat({
-    model,
+  const res = await adapter.chat({
     messages: [
       { role: 'system', content: COMPACT_SYSTEM },
       { role: 'user', content: `Summarize this conversation:\n\n${transcript}` },

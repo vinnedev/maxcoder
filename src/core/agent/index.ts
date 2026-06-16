@@ -3,7 +3,8 @@
 // Analog of src/query.ts (drastically simplified).
 
 import { compact, shouldCompact, usage } from '../context/index.ts'
-import { chat, type ChatMessage, type ToolCall } from '../../providers/ollama/index.ts'
+import type { ChatMessage, ToolCall } from '../../providers/ollama/index.ts'
+import { createAdapter, type ModelAdapter } from '../../models/index.ts'
 import type { Session } from '../../sessions/index.ts'
 import { getAgentType } from '../../tools/subagent/index.ts'
 import { buildSystemPrompt } from '../prompt/index.ts'
@@ -31,11 +32,13 @@ export interface RunAgentParams {
   agentRole?: string
   maxTurns?: number
   signal?: AbortSignal
+  adapter?: ModelAdapter // model is reached only through this; defaults to one bound to p.model
 }
 
 export async function runAgent(p: RunAgentParams): Promise<string> {
   const depth = p.depth ?? 0
   const maxTurns = p.maxTurns ?? 16
+  const adapter = p.adapter ?? createAdapter(p.model, { contextWindow: p.numCtx })
   const systemPrompt = await buildSystemPrompt({
     model: p.model,
     tools: toolInfos(p.tools),
@@ -63,6 +66,7 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
           'You are a focused Max Coder subagent. Complete the delegated task autonomously and ' +
           'report a concise final result. You cannot ask the user questions.',
         signal: p.signal,
+        adapter,
       })
     },
   }
@@ -79,14 +83,13 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
 
     // Auto-compaction (main loop only).
     if (p.session && shouldCompact(p.messages, p.numCtx)) {
-      const r = await compact(p.messages, p.model, p.numCtx)
+      const r = await compact(p.messages, adapter, p.numCtx)
       p.messages.splice(0, p.messages.length, ...r.messages)
       p.session.recordCompaction(r.summary)
       p.onEvent({ type: 'info', text: `auto-compacted context: ${r.before} → ${r.after} tokens` })
     }
 
-    const res = await chat({
-      model: p.model,
+    const res = await adapter.chat({
       messages: [{ role: 'system', content: systemPrompt }, ...p.messages],
       tools: toolDefs(p.tools),
       signal: p.signal,

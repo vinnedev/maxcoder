@@ -6,7 +6,11 @@ import * as path from 'node:path'
 import { gitStatusShort } from '../../shared/config/index.ts'
 import { readText } from '../../shared/fs/index.ts'
 
-const MEMORY_FILES = ['MAXCODER.md', 'AGENTS.md', 'CLAUDE.md']
+const MEMORY_FILES = [
+  ['maxcoder.md', 'MAXCODER.md'],
+  ['agents.md', 'AGENTS.md'],
+  ['claude.md', 'CLAUDE.md'],
+]
 const MAX_MEMORY_BYTES = 20_000
 
 /** Walk up from cwd collecting project memory files (closest first). */
@@ -16,9 +20,10 @@ export async function loadProjectMemory(cwd = process.cwd()): Promise<string> {
   const home = os.homedir()
   let budget = MAX_MEMORY_BYTES
   for (let i = 0; i < 20 && budget > 0; i++) {
-    for (const name of MEMORY_FILES) {
-      const p = path.join(dir, name)
-      const text = await readText(p)
+    for (const names of MEMORY_FILES) {
+      const found = await firstReadable(dir, names)
+      if (!found) continue
+      const { name, p, text } = found
       if (text) {
         const slice = text.slice(0, budget)
         budget -= slice.length
@@ -30,6 +35,15 @@ export async function loadProjectMemory(cwd = process.cwd()): Promise<string> {
     dir = parent
   }
   return chunks.join('\n\n')
+}
+
+async function firstReadable(dir: string, names: string[]): Promise<{ name: string; p: string; text: string } | null> {
+  for (const name of names) {
+    const p = path.join(dir, name)
+    const text = await readText(p)
+    if (text) return { name, p, text }
+  }
+  return null
 }
 
 export interface ToolInfo {

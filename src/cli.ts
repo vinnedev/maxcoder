@@ -5,7 +5,7 @@ import { runAgent, type AgentEvent } from './core/agent/index.ts'
 import { banner, c, centeredLogo, NAME, VERSION } from './ui/brand.ts'
 import { gitBranch } from './shared/config/index.ts'
 import { shell } from './shared/fs/index.ts'
-import { baseUrl, chat, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
+import { baseUrl, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
 import { loadMcpTools } from './tools/mcp/index.ts'
 import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSummary } from './sessions/index.ts'
 import { loadSkills, registerSkillTool } from './tools/skills/index.ts'
@@ -19,6 +19,11 @@ import { orchestrate } from './core/orchestration/orchestrator.ts'
 import { route } from './core/orchestration/router.ts'
 import type { Route } from './core/orchestration/complexity.ts'
 import { Semaphore } from './shared/async/semaphore.ts'
+import { loadConfig, saveConfig, type EffortSetting } from './core/config/index.ts'
+import { EffortController } from './core/effort/controller.ts'
+import { type EffortAssessment } from './core/effort/classifier.ts'
+import { EFFORT_PROFILES } from './core/effort/profiles.ts'
+import { createAdapter } from './models/index.ts'
 import { Tui } from './ui/tui.ts'
 import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
@@ -191,7 +196,7 @@ const SLASH_COMMANDS: Record<string, SlashHandler> = {
   },
   compact: async (state, _a, p) => {
     const { compact } = await import('./core/context/index.ts')
-    const r = await compact(state.messages, state.model, state.numCtx)
+    const r = await compact(state.messages, createAdapter(state.model, { contextWindow: state.numCtx }), state.numCtx)
     state.messages.splice(0, state.messages.length, ...r.messages)
     state.session.recordCompaction(r.summary)
     p(`${c.green}compacted ${r.before} → ${r.after} tokens${c.reset}\n`)
@@ -329,33 +334,56 @@ async function tui(state: State, notes: string[]) {
       }
     },
   })
-  // Routing judge: a single cheap, tool-free model call used only for borderline tasks. The model
-  // gets to decide — routing must never block a normal turn, so any failure falls back to inline.
+  const mkAdapter = () => createAdapter(state.model, { contextWindow: state.numCtx })
+
+  // Routing judge: a cheap JSON-mode call used only for borderline tasks. The model gets to decide —
+  // routing must never block a normal turn, so any failure falls back to inline.
   const judge = async (task: string): Promise<Route> => {
     try {
-      const res = await chat({
-        model: state.model,
+      const { data } = await mkAdapter().generateJson<{ route?: string }>({
         messages: [
-          { role: 'system', content: 'You route a coding request by execution strategy. Answer with ONE word only.' },
+          { role: 'system', content: 'You route a coding request. Reply with ONLY JSON: {"route":"inline|background|orchestrate"}.' },
           {
             role: 'user',
             content:
-              'Classify the request as exactly one of: SIMPLE, BACKGROUND, COMPLEX.\n' +
-              'SIMPLE = a single step or a direct answer.\n' +
-              'BACKGROUND = one long-running job (broad search, full build/test).\n' +
-              'COMPLEX = needs breaking into multiple subtasks handled by several agents.\n\n' +
-              `Request: ${task}\n\nOne word:`,
+              'inline = a single step or a direct answer.\n' +
+              'background = one long-running job (broad search, full build/test).\n' +
+              'orchestrate = needs breaking into multiple subtasks handled by several agents.\n\n' +
+              `Request: ${task}`,
           },
         ],
       })
-      const w = res.text.trim().toUpperCase()
-      if (w.startsWith('COMPLEX')) return 'orchestrate'
-      if (w.startsWith('BACKGROUND')) return 'background'
-      return 'inline'
+      const r = String(data?.route ?? '').toLowerCase()
+      return r === 'orchestrate' || r === 'background' ? r : 'inline'
     } catch {
       return 'inline'
     }
   }
+
+  // Project-local config + effort controller. `auto` classifies each task (deterministic floors +
+  // a small-model JSON opinion). The model is consulted only for genuinely ambiguous tasks.
+  const cfg = await loadConfig(state.cwd)
+  const assess = async (task: string): Promise<Partial<EffortAssessment>> => {
+    try {
+      const { data } = await mkAdapter().generateJson<Partial<EffortAssessment>>({
+        messages: [
+          { role: 'system', content: 'You assess a coding task for an autonomous agent. Reply with ONLY a JSON object, no prose.' },
+          {
+            role: 'user',
+            content:
+              'Return ONLY this JSON for the task:\n' +
+              '{"effort":"low|medium|high|max","task_type":"question|code_review|bug_fix|refactor|architecture|tool_creation|test_creation|documentation|research|unknown",' +
+              '"risk":"low|medium|high","requires_plan":true,"requires_tests":true,"requires_file_edits":true,"requires_tool_use":true,"reason":"short"}\n\n' +
+              `Task: ${task}`,
+          },
+        ],
+      })
+      return data ?? {}
+    } catch {
+      return {}
+    }
+  }
+  const effort = new EffortController(cfg, { assess })
 
   // A routing suggestion awaiting the user's y/N. The original task is never lost.
   let pending: { task: string; route: Route } | null = null
@@ -487,6 +515,32 @@ async function tui(state: State, notes: string[]) {
         else t.print(`${c.red}no active task matching "${arg}"${c.reset}`)
         return
       }
+      if (text === '/effort' || text.startsWith('/effort ')) {
+        const arg = text.slice('/effort'.length).trim().toLowerCase()
+        if (!arg) {
+          t.print(`${c.bold}effort${c.reset}: ${c.cyan}${effort.setting}${c.reset}`)
+          if (effort.setting === 'auto') {
+            t.print(`${c.gray}${effort.explain()}${c.reset}`)
+          } else {
+            const p = EFFORT_PROFILES[effort.setting]
+            t.print(`${c.gray}budget: ≤${p.maxModelCalls} model calls · ≤${p.maxToolCalls} tools · ${p.critiqueCycles} critique cycle(s) · tests:${p.allowTests} · ToT:${p.useTreeOfThoughts}${c.reset}`)
+          }
+          t.print(`${c.gray}set: /effort low|medium|high|max|auto · /effort explain${c.reset}`)
+          return
+        }
+        if (arg === 'explain') {
+          t.print(`${c.gray}${effort.explain()}${c.reset}`)
+          return
+        }
+        if (arg === 'low' || arg === 'medium' || arg === 'high' || arg === 'max' || arg === 'auto') {
+          effort.setSetting(arg as EffortSetting)
+          await saveConfig(cfg, state.cwd)
+          t.print(`${c.green}effort → ${arg}${c.reset}${arg === 'auto' ? ` ${c.gray}(classified per task)${c.reset}` : ''}`)
+          return
+        }
+        t.print(`${c.yellow}usage:${c.reset} /effort [low|medium|high|max|auto|explain]`)
+        return
+      }
       if (text.startsWith('/')) {
         const keep = await handleSlash(state, text, s => t.print(s.replace(/\n+$/, '')))
         if (!keep) {
@@ -499,6 +553,15 @@ async function tui(state: State, notes: string[]) {
         runShellCommand(state, text, s => t.print(s.replace(/\n+$/, '')))
         return
       }
+      // Effort (auto mode only): classify and surface the chosen budget. Deterministic for floored or
+      // simple tasks; consults the model only when ambiguous. Budget enforcement in the loop is a later phase.
+      if (effort.setting === 'auto') {
+        const r = await effort.resolve(text)
+        if (r.assessment) {
+          t.print(`${c.gray}⚙ effort:${c.reset} ${c.cyan}${r.level}${c.reset} ${c.gray}— ${r.assessment.reason}${c.reset}`)
+        }
+      }
+
       // Normal prompt → route (suggest + confirm), then run. The heuristic decides obvious cases
       // instantly; borderline ones consult the model judge. Nothing fans out without the user's y.
       const decision = await route(text, { judge })
