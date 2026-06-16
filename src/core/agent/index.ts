@@ -124,7 +124,7 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
         p.onEvent({
           type: 'info',
           text: `Repeated the same ${call.name} call ${seen}× — stopping to avoid a loop. ` +
-            `Try a stronger model, e.g. --model qwen2.5-coder:7b.`,
+            `Try rephrasing the task, or /orchestrate to break it into focused subtasks.`,
         })
         return ''
       }
@@ -133,8 +133,8 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
       if (nameSeen >= 6) {
         p.onEvent({
           type: 'info',
-          text: `Called ${call.name} ${nameSeen}× without converging — stopping. ` +
-            `This usually means the model is too small; try --model qwen2.5-coder:7b.`,
+          text: `Called ${call.name} ${nameSeen}× without converging — stopping to avoid a loop. ` +
+            `Try a more specific task or /orchestrate to decompose it. (A larger model is also an option.)`,
         })
         return ''
       }

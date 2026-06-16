@@ -67,6 +67,15 @@ test('a throwing run marks the task errored', async () => {
   expect(manager.get(id)?.error).toBe('boom')
 })
 
+test('start(goal, kind) records the task kind (default background)', async () => {
+  const manager = mkManager()
+  const runner = new BackgroundRunner({ manager, run: async () => 'ok' })
+  const bgId = runner.start('a')
+  const orchId = runner.start('b', 'orchestrated')
+  expect(manager.get(bgId)?.kind).toBe('background')
+  expect(manager.get(orchId)?.kind).toBe('orchestrated')
+})
+
 test('cancel aborts the run signal and marks cancelled', async () => {
   const manager = mkManager()
   let sawAbort = false

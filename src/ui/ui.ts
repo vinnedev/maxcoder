@@ -23,6 +23,7 @@ export const SLASH_COMMANDS = [
   '/qrm',
   '/qclear',
   '/bg',
+  '/orchestrate',
   '/tasks',
   '/cancel',
   '/exit',
@@ -266,6 +267,7 @@ export function helpText(): string {
   ${c.cyan}/queue${c.reset}       list queued prompts (type while busy to enqueue)
   ${c.cyan}/qpause${c.reset}      pause/resume the queue · ${c.cyan}/qrm${c.reset} <id> · ${c.cyan}/qclear${c.reset}
   ${c.cyan}/bg${c.reset} <task>   run a task in the background (read-only) · ${c.cyan}/tasks${c.reset} · ${c.cyan}/cancel${c.reset} <id>
+  ${c.cyan}/orchestrate${c.reset} <task>  decompose → parallel subagents → synthesize → review
   ${c.cyan}/exit${c.reset}        quit
   ${c.yellow}!cmd${c.reset}        run a shell command in the startup directory
 

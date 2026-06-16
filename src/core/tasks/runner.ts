@@ -4,7 +4,7 @@
 // Single-process Bun: "background" = an async Promise tracked here, so the input loop stays responsive.
 
 import type { TaskManager } from './manager.ts'
-import type { TaskRecord } from './types.ts'
+import type { TaskKind, TaskRecord } from './types.ts'
 
 export interface BackgroundRunOptions {
   manager: TaskManager
@@ -24,9 +24,9 @@ export class BackgroundRunner {
     return Math.max(1, this.opts.maxConcurrent ?? 2)
   }
 
-  /** Queue a background task and start it if a slot is free. Returns its id. */
-  start(goal: string): string {
-    const t = this.opts.manager.create(goal, 'background')
+  /** Queue a task (background or orchestrated) and start it if a slot is free. Returns its id. */
+  start(goal: string, kind: TaskKind = 'background'): string {
+    const t = this.opts.manager.create(goal, kind)
     this.waiting.push(t.id)
     this.pump()
     return t.id

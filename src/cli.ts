@@ -5,7 +5,7 @@ import { runAgent, type AgentEvent } from './core/agent/index.ts'
 import { banner, c, centeredLogo, NAME, VERSION } from './ui/brand.ts'
 import { gitBranch } from './shared/config/index.ts'
 import { shell } from './shared/fs/index.ts'
-import { baseUrl, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
+import { baseUrl, chat, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
 import { loadMcpTools } from './tools/mcp/index.ts'
 import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSummary } from './sessions/index.ts'
 import { loadSkills, registerSkillTool } from './tools/skills/index.ts'
@@ -15,6 +15,10 @@ import { PromptQueue } from './core/queue/index.ts'
 import { drainQueue } from './core/queue/runner.ts'
 import { TaskManager } from './core/tasks/manager.ts'
 import { BackgroundRunner } from './core/tasks/runner.ts'
+import { orchestrate } from './core/orchestration/orchestrator.ts'
+import { route } from './core/orchestration/router.ts'
+import type { Route } from './core/orchestration/complexity.ts'
+import { Semaphore } from './shared/async/semaphore.ts'
 import { Tui } from './ui/tui.ts'
 import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
@@ -298,12 +302,23 @@ async function tui(state: State, notes: string[]) {
   let currentAbort: AbortController | null = null
   const taskManager = new TaskManager()
   let ui: Tui
+  // Shared model gate: caps total in-flight model calls across all orchestrations so the single
+  // local Ollama backend isn't swamped, no matter how many orchestrated tasks fan out at once.
+  const modelGate = new Semaphore(2)
   const bg = new BackgroundRunner({
     manager: taskManager,
-    maxConcurrent: 2,
+    maxConcurrent: 4,
     run: async (task, signal) => {
-      // Background tasks run with READ-ONLY tools and an isolated context (no parallel writes — safety).
+      // Both kinds run with READ-ONLY tools and isolated context (no parallel writes — safety).
       const tools = allTools().filter(tool => !tool.mutating)
+      if (task.kind === 'orchestrated') {
+        // Surface only progress/info lines from subagents — raw interleaved streams would be noise.
+        const onEvent = (e: AgentEvent) => { if (e.type === 'info') ui.print(`${c.gray}  ▸ ${e.text}${c.reset}`) }
+        return orchestrate(task.goal, {
+          model: state.model, numCtx: state.numCtx, signal, onEvent,
+          manager: taskManager, parentId: task.id, gate: modelGate, tools,
+        })
+      }
       return runAgent({ task: task.goal, model: state.model, numCtx: state.numCtx, messages: [], tools, maxTurns: 8, signal, onEvent: () => {} })
     },
     onUpdate: task => {
@@ -314,6 +329,88 @@ async function tui(state: State, notes: string[]) {
       }
     },
   })
+  // Routing judge: a single cheap, tool-free model call used only for borderline tasks. The model
+  // gets to decide — routing must never block a normal turn, so any failure falls back to inline.
+  const judge = async (task: string): Promise<Route> => {
+    try {
+      const res = await chat({
+        model: state.model,
+        messages: [
+          { role: 'system', content: 'You route a coding request by execution strategy. Answer with ONE word only.' },
+          {
+            role: 'user',
+            content:
+              'Classify the request as exactly one of: SIMPLE, BACKGROUND, COMPLEX.\n' +
+              'SIMPLE = a single step or a direct answer.\n' +
+              'BACKGROUND = one long-running job (broad search, full build/test).\n' +
+              'COMPLEX = needs breaking into multiple subtasks handled by several agents.\n\n' +
+              `Request: ${task}\n\nOne word:`,
+          },
+        ],
+      })
+      const w = res.text.trim().toUpperCase()
+      if (w.startsWith('COMPLEX')) return 'orchestrate'
+      if (w.startsWith('BACKGROUND')) return 'background'
+      return 'inline'
+    } catch {
+      return 'inline'
+    }
+  }
+
+  // A routing suggestion awaiting the user's y/N. The original task is never lost.
+  let pending: { task: string; route: Route } | null = null
+
+  async function runAgentText(task: string): Promise<void> {
+    const ac = new AbortController()
+    currentAbort = ac
+    try {
+      await runAgent({
+        task,
+        model: state.model,
+        numCtx: state.numCtx,
+        messages: state.messages,
+        tools: allTools(),
+        session: state.session,
+        signal: ac.signal,
+        onEvent: e => {
+          if (e.type === 'usage') {
+            state.lastTokens = e.tokens
+            return
+          }
+          if (e.type === 'stream') {
+            ui.streamDelta(e.text, e.depth)
+            return
+          }
+          if (e.type === 'final') {
+            if (!ui.finishStream(e.text, e.depth)) {
+              const s = formatEvent(e)
+              if (s) ui.print(s)
+            }
+            return
+          }
+          ui.endStream() // close any open stream before a tool/info block
+          const s = formatEvent(e)
+          if (s) ui.print(s)
+        },
+      })
+    } finally {
+      currentAbort = null
+    }
+  }
+
+  // Run a task inline, then drain prompts queued while it ran (shared conversation context).
+  async function runInline(task: string): Promise<void> {
+    await runAgentText(task)
+    await drainQueue({
+      queue: state.queue,
+      run: async item => {
+        ui.print(formatUserMessage(item.text))
+        await runAgentText(item.text)
+        return 'ok'
+      },
+    })
+  }
+
   ui = new Tui({
     status: () => ({
       model: state.model,
@@ -328,6 +425,25 @@ async function tui(state: State, notes: string[]) {
       t.print(`${c.gray}▸ queued${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}(${state.queue.pending().length} pending — runs after the current task)${c.reset}`)
     },
     onSubmit: async (text, t) => {
+      // Resolve a pending routing suggestion (y/N gate). The original task is never lost.
+      if (pending) {
+        const task = pending.task
+        const r = pending.route
+        const ans = text.trim().toLowerCase()
+        if (ans === '' || /^(y|yes|s|sim)$/.test(ans)) {
+          pending = null
+          const kind = r === 'orchestrate' ? 'orchestrated' : 'background'
+          const id = bg.start(task, kind)
+          t.print(`${c.gray}⏳ ${kind === 'orchestrated' ? 'orchestrate' : 'background'}${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}${task.slice(0, 56)}${c.reset}`)
+          return
+        }
+        if (/^(n|no|nao|não)$/.test(ans)) {
+          pending = null
+          await runInline(task)
+          return
+        }
+        pending = null // any other input: drop the suggestion and handle `text` as a fresh submit
+      }
       if (text.startsWith('/bg ')) {
         const goal = text.slice(4).trim()
         if (!goal) {
@@ -336,6 +452,16 @@ async function tui(state: State, notes: string[]) {
         }
         const id = bg.start(goal)
         t.print(`${c.gray}⏳ background${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}${goal.slice(0, 60)} — read-only, runs in background${c.reset}`)
+        return
+      }
+      if (text.startsWith('/orchestrate ')) {
+        const goal = text.slice(13).trim()
+        if (!goal) {
+          t.print(`${c.yellow}usage:${c.reset} /orchestrate <task>`)
+          return
+        }
+        const id = bg.start(goal, 'orchestrated')
+        t.print(`${c.gray}⏳ orchestrate${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}${goal.slice(0, 56)} — plan · parallel subagents · synthesize · review${c.reset}`)
         return
       }
       if (text === '/tasks') {
@@ -373,53 +499,21 @@ async function tui(state: State, notes: string[]) {
         runShellCommand(state, text, s => t.print(s.replace(/\n+$/, '')))
         return
       }
-      const runText = async (task: string) => {
-        const ac = new AbortController()
-        currentAbort = ac
-        try {
-          await runAgent({
-            task,
-            model: state.model,
-            numCtx: state.numCtx,
-            messages: state.messages,
-            tools: allTools(),
-            session: state.session,
-            signal: ac.signal,
-            onEvent: e => {
-              if (e.type === 'usage') {
-                state.lastTokens = e.tokens
-                return
-              }
-              if (e.type === 'stream') {
-                t.streamDelta(e.text, e.depth)
-                return
-              }
-              if (e.type === 'final') {
-                if (!t.finishStream(e.text, e.depth)) {
-                  const s = formatEvent(e)
-                  if (s) t.print(s)
-                }
-                return
-              }
-              t.endStream() // close any open stream before a tool/info block
-              const s = formatEvent(e)
-              if (s) t.print(s)
-            },
-          })
-        } finally {
-          currentAbort = null
-        }
+      // Normal prompt → route (suggest + confirm), then run. The heuristic decides obvious cases
+      // instantly; borderline ones consult the model judge. Nothing fans out without the user's y.
+      const decision = await route(text, { judge })
+      if (decision.route !== 'inline') {
+        pending = { task: text, route: decision.route }
+        const what = decision.route === 'orchestrate'
+          ? 'orchestrate it (plan · parallel subagents · synthesize · review)'
+          : 'run it in the background'
+        t.print(
+          `${c.yellow}💡 looks complex${c.reset} ${c.gray}— ${decision.reason}.${c.reset} ${what}? ` +
+          `${c.gray}[y/Enter = yes · n = run normally · or type another request]${c.reset}`,
+        )
+        return
       }
-      await runText(text)
-      // Drain prompts queued while this task ran (sequential, shared conversation context).
-      await drainQueue({
-        queue: state.queue,
-        run: async item => {
-          t.print(formatUserMessage(item.text))
-          await runText(item.text)
-          return 'ok'
-        },
-      })
+      await runInline(text)
     },
   })
   if (notes.length) ui.print(`${c.gray}loaded: ${notes.join(' · ')}${c.reset}`)

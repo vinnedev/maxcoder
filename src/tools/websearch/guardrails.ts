@@ -142,6 +142,7 @@ export function validateSearchArgs(input: Record<string, unknown>, maxConfigured
     if (v == null) return []
     if (!Array.isArray(v)) return `${name} must be an array`
     if (v.length > max) return `${name} has too many entries`
+    
     const out: string[] = []
     for (const item of v) {
       if (typeof item !== 'string') return `${name} entries must be strings`
@@ -151,8 +152,10 @@ export function validateSearchArgs(input: Record<string, unknown>, maxConfigured
     }
     return out
   }
+
   const include = domainArray(input.include_domains, 10, 'include_domains')
   if (typeof include === 'string') return { ok: false, warnings, blocked, error: include }
+
   const exclude = domainArray(input.exclude_domains, 20, 'exclude_domains')
   if (typeof exclude === 'string') return { ok: false, warnings, blocked, error: exclude }
 
