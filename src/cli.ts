@@ -13,6 +13,8 @@ import { loadAgentTypes, registerTaskTool } from './tools/subagent/index.ts'
 import { allTools, registerBuiltins } from './tools.ts'
 import { PromptQueue } from './core/queue/index.ts'
 import { drainQueue } from './core/queue/runner.ts'
+import { TaskManager } from './core/tasks/manager.ts'
+import { BackgroundRunner } from './core/tasks/runner.ts'
 import { Tui } from './ui/tui.ts'
 import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
@@ -294,7 +296,25 @@ async function repl(state: State) {
 // --------------------------------------------------------------------------- //
 async function tui(state: State, notes: string[]) {
   let currentAbort: AbortController | null = null
-  const ui = new Tui({
+  const taskManager = new TaskManager()
+  let ui: Tui
+  const bg = new BackgroundRunner({
+    manager: taskManager,
+    maxConcurrent: 2,
+    run: async (task, signal) => {
+      // Background tasks run with READ-ONLY tools and an isolated context (no parallel writes — safety).
+      const tools = allTools().filter(tool => !tool.mutating)
+      return runAgent({ task: task.goal, model: state.model, numCtx: state.numCtx, messages: [], tools, maxTurns: 8, signal, onEvent: () => {} })
+    },
+    onUpdate: task => {
+      if (task.status === 'done') {
+        ui.print(`${c.green}✓ background${c.reset} ${c.dim}#${task.id.slice(0, 6)}${c.reset} ${c.gray}${task.goal.slice(0, 50)}${c.reset}\n${(task.result ?? '').slice(0, 800)}`)
+      } else if (task.status === 'error') {
+        ui.print(`${c.red}✗ background #${task.id.slice(0, 6)} failed:${c.reset} ${c.gray}${task.error}${c.reset}`)
+      }
+    },
+  })
+  ui = new Tui({
     status: () => ({
       model: state.model,
       tokens: state.lastTokens,
@@ -308,6 +328,39 @@ async function tui(state: State, notes: string[]) {
       t.print(`${c.gray}▸ queued${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}(${state.queue.pending().length} pending — runs after the current task)${c.reset}`)
     },
     onSubmit: async (text, t) => {
+      if (text.startsWith('/bg ')) {
+        const goal = text.slice(4).trim()
+        if (!goal) {
+          t.print(`${c.yellow}usage:${c.reset} /bg <task>`)
+          return
+        }
+        const id = bg.start(goal)
+        t.print(`${c.gray}⏳ background${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}${goal.slice(0, 60)} — read-only, runs in background${c.reset}`)
+        return
+      }
+      if (text === '/tasks') {
+        const list = taskManager.list().filter(x => x.status !== 'cancelled').slice(-10)
+        if (!list.length) {
+          t.print(`${c.gray}(no background tasks)${c.reset}`)
+          return
+        }
+        for (const x of list) {
+          const icon = x.status === 'running' ? `${c.green}▶${c.reset}` : x.status === 'done' ? `${c.green}✓${c.reset}` : x.status === 'error' ? `${c.red}✗${c.reset}` : `${c.gray}·${c.reset}`
+          t.print(`  ${c.dim}#${x.id.slice(0, 6)}${c.reset} ${icon} ${x.goal.slice(0, 60)}`)
+        }
+        return
+      }
+      if (text.startsWith('/cancel ')) {
+        const arg = text.slice(8).trim()
+        if (!arg) {
+          t.print(`${c.yellow}usage:${c.reset} /cancel <id>`)
+          return
+        }
+        const target = taskManager.active().find(x => x.id === arg || x.id.startsWith(arg))
+        if (target && bg.cancel(target.id)) t.print(`${c.green}cancelled #${target.id.slice(0, 6)}${c.reset}`)
+        else t.print(`${c.red}no active task matching "${arg}"${c.reset}`)
+        return
+      }
       if (text.startsWith('/')) {
         const keep = await handleSlash(state, text, s => t.print(s.replace(/\n+$/, '')))
         if (!keep) {

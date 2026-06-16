@@ -62,7 +62,7 @@ test('completeInput completes top-level doctor command', () => {
 test('completeInput cycles ambiguous commands', () => {
   const first = completeInput('/c', 2, 0)
   const second = completeInput('/c', 2, 1)
-  expect(first.suggestions).toEqual(['/compact', '/clear', '/clean', '/cost'])
+  expect(first.suggestions).toEqual(['/compact', '/clear', '/clean', '/cost', '/cancel'])
   expect(second.input).toBe('/clear')
 })
 

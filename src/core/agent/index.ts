@@ -139,8 +139,13 @@ export async function runAgent(p: RunAgentParams): Promise<string> {
         return ''
       }
 
+      // Enforce the allow-list: execution resolves from the global registry, so a fabricated
+      // call to a tool absent from `p.tools` (e.g. a mutating tool in a read-only background task)
+      // must be rejected here — otherwise the `mutating` guard never fires (tool is undefined).
       let result: string
-      if (tool?.mutating && p.confirm && !(await p.confirm(call))) {
+      if (!tool) {
+        result = `ERROR: tool "${call.name}" is not available in this context.`
+      } else if (tool.mutating && p.confirm && !(await p.confirm(call))) {
         result = '(denied by user)'
       } else {
         result = await executeTool(call.name, call.args, ctx)
