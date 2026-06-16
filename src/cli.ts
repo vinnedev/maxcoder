@@ -24,6 +24,7 @@ import { EffortController } from './core/effort/controller.ts'
 import { type EffortAssessment } from './core/effort/classifier.ts'
 import { EFFORT_PROFILES } from './core/effort/profiles.ts'
 import { createAdapter } from './models/index.ts'
+import { RunRecorder, jsonlSink } from './core/telemetry/index.ts'
 import { Tui } from './ui/tui.ts'
 import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
@@ -50,6 +51,10 @@ interface State {
 async function initRegistry(opts: { mcp: boolean }): Promise<string[]> {
   const notes: string[] = []
   registerBuiltins()
+  const { registerRepoTools } = await import('./tools/repo/index.ts')
+  registerRepoTools()
+  const { registerMemoryTools } = await import('./tools/memory/index.ts')
+  registerMemoryTools()
   const skills = await registerSkillTool()
   if (skills) notes.push(`${skills} skill(s)`)
   await registerTaskTool()
@@ -391,6 +396,7 @@ async function tui(state: State, notes: string[]) {
   async function runAgentText(task: string): Promise<void> {
     const ac = new AbortController()
     currentAbort = ac
+    const rec = new RunRecorder(jsonlSink(state.cwd), { model: state.model, effort: effort.setting, task })
     try {
       await runAgent({
         task,
@@ -403,12 +409,14 @@ async function tui(state: State, notes: string[]) {
         onEvent: e => {
           if (e.type === 'usage') {
             state.lastTokens = e.tokens
+            rec.tokens(e.tokens)
             return
           }
           if (e.type === 'stream') {
             ui.streamDelta(e.text, e.depth)
             return
           }
+          if (e.type === 'tool_result') rec.tool(e.name, !/^(ERROR|BLOCKED)/.test(e.result))
           if (e.type === 'final') {
             if (!ui.finishStream(e.text, e.depth)) {
               const s = formatEvent(e)
@@ -421,6 +429,10 @@ async function tui(state: State, notes: string[]) {
           if (s) ui.print(s)
         },
       })
+      rec.end(true)
+    } catch (err) {
+      rec.end(false, err instanceof Error ? err.message : String(err))
+      throw err
     } finally {
       currentAbort = null
     }

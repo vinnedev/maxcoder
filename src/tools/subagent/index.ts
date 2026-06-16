@@ -18,12 +18,12 @@ export interface AgentType {
 export async function loadAgentTypes(): Promise<AgentType[]> {
   const out: AgentType[] = []
   for (const entry of listDir(agentsDir())) {
-    if (entry.isDirectory() || !entry.name.endsWith('.md')) continue
+    if (entry.isDirectory() || !entry.name.toLowerCase().endsWith('.md')) continue
     const raw = await readText(path.join(agentsDir(), entry.name))
     if (raw === null) continue
     const { meta, body } = parseFrontmatter(raw)
     out.push({
-      name: meta.name || entry.name.replace(/\.md$/, ''),
+      name: meta.name || entry.name.replace(/\.md$/i, ''),
       description: meta.description || '(no description)',
       role: body || `You are the ${meta.name || entry.name} subagent.`,
       tools: meta.tools ? meta.tools.split(',').map(s => s.trim()).filter(Boolean) : undefined,

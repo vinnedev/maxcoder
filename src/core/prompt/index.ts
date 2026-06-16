@@ -5,6 +5,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { gitStatusShort } from '../../shared/config/index.ts'
 import { readText } from '../../shared/fs/index.ts'
+import { recallForPrompt } from '../memory/index.ts'
 
 const MEMORY_FILES = [
   ['maxcoder.md', 'MAXCODER.md'],
@@ -121,6 +122,11 @@ ${input.tools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
   const memory = await loadProjectMemory(cwd)
   if (memory) {
     blocks.push(`<project_memory>\nThe following project instructions take precedence:\n\n${memory}\n</project_memory>`)
+  }
+
+  const learned = await recallForPrompt(cwd)
+  if (learned) {
+    blocks.push(`<learned_memory>\nLearned from past sessions (apply when relevant):\n\n${learned}\n</learned_memory>`)
   }
 
   return blocks.join('\n\n')

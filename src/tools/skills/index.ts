@@ -33,8 +33,9 @@ function skillFiles(dir: string): string[] {
   for (const entry of listDir(dir)) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      out.push(path.join(full, 'SKILL.md'))
-    } else if (entry.name.endsWith('.md')) {
+      const nested = listDir(full).find(x => !x.isDirectory() && x.name.toLowerCase() === 'skill.md')
+      if (nested) out.push(path.join(full, nested.name))
+    } else if (entry.name.toLowerCase().endsWith('.md')) {
       out.push(full)
     }
   }
@@ -47,8 +48,8 @@ export async function loadSkills(): Promise<Skill[]> {
     const raw = await readText(file)
     if (raw === null) continue
     const { meta, body } = parseFrontmatter(raw)
-    const fallback = path.basename(file).replace(/\.md$/, '')
-    const name = meta.name || (fallback === 'SKILL' ? path.basename(path.dirname(file)) : fallback)
+    const fallback = path.basename(file).replace(/\.md$/i, '')
+    const name = meta.name || (fallback.toLowerCase() === 'skill' ? path.basename(path.dirname(file)) : fallback)
     out.push({ name, description: meta.description || '(no description)', body })
   }
   return out
