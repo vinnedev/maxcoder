@@ -79,4 +79,5 @@ test('assistant final event includes role label and formats markdown', () => {
   expect(out).toContain('Title')
   expect(out).toContain('• item with')
   expect(out).toContain('code')
+  expect(out).not.toContain('\n\n\n')
 })

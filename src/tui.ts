@@ -230,7 +230,7 @@ export class Tui {
   /** Replace an open streamed block with the final formatted markdown answer. */
   finishStream(text: string, depth = this.streamDepth): boolean {
     if (!this.streamOpen) return false
-    this.blocks[this.streamIdx] = `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}\n`
+    this.blocks[this.streamIdx] = `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}`
     this.streamOpen = false
     this.streamIdx = -1
     this.streamDepth = 0

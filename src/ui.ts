@@ -88,7 +88,7 @@ const indent = (depth: number) => (depth > 0 ? c.gray + '│ '.repeat(depth) + c
 const badge = (label: string, color: string) => `${c.gray}[${c.reset}${color}${label}${c.reset}${c.gray}]${c.reset}`
 
 export function formatUserMessage(text: string): string {
-  return `${badge('user', c.magenta)}\n${text}\n`
+  return `\n${badge('user', c.magenta)}\n${text}`
 }
 
 export function formatAssistantHeader(depth = 0): string {
@@ -158,7 +158,7 @@ export function formatAssistantText(text: string, depth = 0): string {
 }
 
 export function formatAssistantMessage(text: string, depth = 0): string {
-  return `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}\n`
+  return `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}`
 }
 
 function summarizeArgs(args: Record<string, unknown>): string {
@@ -214,7 +214,7 @@ const EVENT_FORMATTERS: Partial<Record<AgentEvent['type'], EventFormatter>> = {
   tool_call: ev => {
     const e = ev as Extract<AgentEvent, { type: 'tool_call' }>
     const tag = e.emulated ? `${c.dim}(emulated)${c.reset} ` : ''
-    return `${indent(e.depth)}${badge('tool', c.blue)} ${c.bold}${e.name}${c.reset} ${tag}${c.gray}${summarizeArgs(e.args)}${c.reset}`
+    return `\n${indent(e.depth)}${badge('tool', c.blue)} ${c.bold}${e.name}${c.reset} ${tag}${c.gray}${summarizeArgs(e.args)}${c.reset}`
   },
   tool_result: ev => {
     const e = ev as Extract<AgentEvent, { type: 'tool_result' }>
@@ -238,7 +238,7 @@ export function formatEvent(e: AgentEvent): string | null {
 /** Plain-mode renderer (writes straight to stdout). */
 export function renderEvent(e: AgentEvent): void {
   const s = formatEvent(e)
-  if (s !== null) out((e.type === 'final' ? '\n' : '') + s + '\n')
+  if (s !== null) out(s + '\n')
 }
 
 export function helpText(): string {
