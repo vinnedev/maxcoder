@@ -2,7 +2,7 @@
 
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { ensureDir, sh } from './shared/fs/index.ts'
+import { ensureDir, sh } from '../fs/index.ts'
 
 export function configDir(): string {
   const base = process.env.MAXCODER_CONFIG_DIR || path.join(os.homedir(), '.maxcoder')

@@ -1,7 +1,7 @@
 // Max Coder — UI helpers shared by the plain REPL and the full-screen TUI.
 
 import { c } from './brand.ts'
-import type { AgentEvent } from './core/agent/index.ts'
+import type { AgentEvent } from '../core/agent/index.ts'
 
 const out = (s: string) => process.stdout.write(s)
 

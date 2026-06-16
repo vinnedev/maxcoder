@@ -4,8 +4,8 @@
 import { expect, test } from 'bun:test'
 import { contextTokens, estimateTokens, messageTokens } from '../src/core/context/index.ts'
 import { parseFrontmatter } from '../src/tools/skills/index.ts'
-import { completeInput, suggestInput } from '../src/tui.ts'
-import { formatEvent } from '../src/ui.ts'
+import { completeInput, suggestInput } from '../src/ui/tui.ts'
+import { formatEvent } from '../src/ui/ui.ts'
 
 test('estimateTokens ~ chars/4', () => {
   expect(estimateTokens('')).toBe(0)

@@ -3,7 +3,7 @@
 
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { gitStatusShort } from '../../config.ts'
+import { gitStatusShort } from '../../shared/config/index.ts'
 import { readText } from '../../shared/fs/index.ts'
 
 const MEMORY_FILES = ['MAXCODER.md', 'AGENTS.md', 'CLAUDE.md']

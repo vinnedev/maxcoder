@@ -2,7 +2,7 @@
 // Analog of src/skills/* (simplified). Skills live in ~/.maxcoder/skills/*.md (or */SKILL.md).
 
 import * as path from 'node:path'
-import { skillsDir } from '../../config.ts'
+import { skillsDir } from '../../shared/config/index.ts'
 import { listDir, readText } from '../../shared/fs/index.ts'
 import { registerTool } from '../../tools.ts'
 

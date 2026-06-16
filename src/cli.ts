@@ -2,8 +2,8 @@
 // Max Coder — CLI entrypoint. Sessions, context, system prompts, tools/skills/agents/MCP, UI.
 
 import { runAgent, type AgentEvent } from './core/agent/index.ts'
-import { banner, c, centeredLogo, NAME, VERSION } from './brand.ts'
-import { gitBranch } from './config.ts'
+import { banner, c, centeredLogo, NAME, VERSION } from './ui/brand.ts'
+import { gitBranch } from './shared/config/index.ts'
 import { shell } from './shared/fs/index.ts'
 import { baseUrl, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
 import { loadMcpTools } from './tools/mcp/index.ts'
@@ -11,8 +11,8 @@ import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSum
 import { loadSkills, registerSkillTool } from './tools/skills/index.ts'
 import { loadAgentTypes, registerTaskTool } from './tools/subagent/index.ts'
 import { allTools, registerBuiltins } from './tools.ts'
-import { Tui } from './tui.ts'
-import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui.ts'
+import { Tui } from './ui/tui.ts'
+import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
 const out = (s: string) => process.stdout.write(s)
 

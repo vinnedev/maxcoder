@@ -3,7 +3,7 @@
 // Analog of src/tools/AgentTool/* (simplified).
 
 import * as path from 'node:path'
-import { agentsDir } from '../../config.ts'
+import { agentsDir } from '../../shared/config/index.ts'
 import { listDir, readText } from '../../shared/fs/index.ts'
 import { parseFrontmatter } from '../skills/index.ts'
 import { registerTool } from '../../tools.ts'
