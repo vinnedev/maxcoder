@@ -2,3 +2,6 @@ dist/
 node_modules/
 *.log
 .DS_Store
+
+# Project-local agent state (config, caches, logs, plans, memory)
+.maxcoder/
