@@ -1,0 +1,6 @@
+[
+  { "title": "Node.js — Download | Official", "url": "https://nodejs.org/en/download", "snippet": "Node.js current and LTS releases.", "published_at": "2026-05-01" },
+  { "title": "Node 22 — random blog", "url": "https://blog.example.com/node-22", "snippet": "My opinion on the latest node release.", "published_at": null },
+  { "title": "r/node — which version?", "url": "https://www.reddit.com/r/node/comments/abc", "snippet": "Community discussion about node versions.", "published_at": "2026-01-01" },
+  { "title": "Duplicate official", "url": "https://nodejs.org/en/download/", "snippet": "dup of the official page", "published_at": "2026-05-01" }
+]
