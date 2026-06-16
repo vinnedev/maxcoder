@@ -124,6 +124,7 @@ export interface TuiStatus {
 
 export interface TuiHost {
   onSubmit: (text: string, tui: Tui) => Promise<void>
+  onEnqueue?: (text: string, tui: Tui) => void
   onInterrupt: () => void
   status: () => TuiStatus
 }
@@ -547,13 +548,18 @@ export class Tui {
 
   private submit(): void {
     const text = this.input.trim()
-    if (this.busy || !text) return
+    if (!text) return
     this.history.push(text)
     this.histIdx = -1
     this.draft = ''
     this.input = ''
     this.cursor = 0
     this.scroll = 0
+    if (this.busy) {
+      // A task is running: queue this prompt instead of dropping it.
+      this.host.onEnqueue?.(text, this)
+      return
+    }
     if (!text.startsWith('!')) this.print(formatUserMessage(text))
     this.setBusy(true)
     Promise.resolve(this.host.onSubmit(text, this))

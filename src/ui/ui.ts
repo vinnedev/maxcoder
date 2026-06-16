@@ -17,6 +17,11 @@ export const SLASH_COMMANDS = [
   '/skills',
   '/agents',
   '/cost',
+  '/queue',
+  '/qpause',
+  '/qresume',
+  '/qrm',
+  '/qclear',
   '/exit',
   '/quit',
 ]
@@ -255,6 +260,8 @@ export function helpText(): string {
   ${c.cyan}/skills${c.reset}      list loaded skills
   ${c.cyan}/agents${c.reset}      list custom agent types
   ${c.cyan}/cost${c.reset}        show context usage
+  ${c.cyan}/queue${c.reset}       list queued prompts (type while busy to enqueue)
+  ${c.cyan}/qpause${c.reset}      pause/resume the queue · ${c.cyan}/qrm${c.reset} <id> · ${c.cyan}/qclear${c.reset}
   ${c.cyan}/exit${c.reset}        quit
   ${c.yellow}!cmd${c.reset}        run a shell command in the startup directory
 

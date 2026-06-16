@@ -11,6 +11,8 @@ import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSum
 import { loadSkills, registerSkillTool } from './tools/skills/index.ts'
 import { loadAgentTypes, registerTaskTool } from './tools/subagent/index.ts'
 import { allTools, registerBuiltins } from './tools.ts'
+import { PromptQueue } from './core/queue/index.ts'
+import { drainQueue } from './core/queue/runner.ts'
 import { Tui } from './ui/tui.ts'
 import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui/ui.ts'
 
@@ -28,6 +30,7 @@ interface State {
   session: Session
   messages: ChatMessage[]
   lastTokens: number
+  queue: PromptQueue
 }
 
 // --------------------------------------------------------------------------- //
@@ -215,6 +218,38 @@ const SLASH_COMMANDS: Record<string, SlashHandler> = {
   cost: (state, _a, p) => {
     p(`tokens in context: ${c.cyan}${state.lastTokens}${c.reset} / ${state.numCtx} (${Math.round((state.lastTokens / state.numCtx) * 100)}%)\n`)
   },
+  queue: (state, _a, p) => {
+    const items = state.queue.list().filter(i => i.status === 'pending' || i.status === 'running')
+    if (!items.length) {
+      p(`${c.gray}(queue empty)${c.reset}\n`)
+      return
+    }
+    p(`${c.bold}Queue${c.reset}${state.queue.paused ? ` ${c.yellow}(paused)${c.reset}` : ''}\n`)
+    items.forEach((i, n) =>
+      p(`  ${c.cyan}${n + 1}.${c.reset} ${c.dim}#${i.id.slice(0, 6)}${c.reset} ${i.status === 'running' ? `${c.green}▶${c.reset}` : ' '} ${i.text.slice(0, 70)}\n`),
+    )
+  },
+  qpause: (state, _a, p) => {
+    state.queue.paused = true
+    p(`${c.yellow}queue paused${c.reset} ${c.gray}(queued prompts won't run until /qresume)${c.reset}\n`)
+  },
+  qresume: (state, _a, p) => {
+    state.queue.paused = false
+    p(`${c.green}queue resumed${c.reset}\n`)
+  },
+  qrm: (state, arg, p) => {
+    const item = state.queue.pending().find(i => i.id === arg || i.id.startsWith(arg))
+    if (!arg || !item) {
+      p(`${c.red}no pending item matching "${arg}"${c.reset} ${c.gray}(see /queue)${c.reset}\n`)
+      return
+    }
+    state.queue.remove(item.id)
+    p(`${c.green}removed #${item.id.slice(0, 6)}${c.reset}\n`)
+  },
+  qclear: (state, _a, p) => {
+    state.queue.clear()
+    p(`${c.green}queue cleared${c.reset}\n`)
+  },
 }
 
 async function handleSlash(state: State, input: string, p: (s: string) => void = out): Promise<boolean> {
@@ -268,6 +303,10 @@ async function tui(state: State, notes: string[]) {
       gitBranch: gitBranch(),
     }),
     onInterrupt: () => currentAbort?.abort(),
+    onEnqueue: (text, t) => {
+      const id = state.queue.enqueue(text)
+      t.print(`${c.gray}▸ queued${c.reset} ${c.dim}#${id.slice(0, 6)}${c.reset} ${c.gray}(${state.queue.pending().length} pending — runs after the current task)${c.reset}`)
+    },
     onSubmit: async (text, t) => {
       if (text.startsWith('/')) {
         const keep = await handleSlash(state, text, s => t.print(s.replace(/\n+$/, '')))
@@ -281,41 +320,53 @@ async function tui(state: State, notes: string[]) {
         runShellCommand(state, text, s => t.print(s.replace(/\n+$/, '')))
         return
       }
-      const ac = new AbortController()
-      currentAbort = ac
-      try {
-        await runAgent({
-          task: text,
-          model: state.model,
-          numCtx: state.numCtx,
-          messages: state.messages,
-          tools: allTools(),
-          session: state.session,
-          signal: ac.signal,
-          onEvent: e => {
-            if (e.type === 'usage') {
-              state.lastTokens = e.tokens
-              return
-            }
-            if (e.type === 'stream') {
-              t.streamDelta(e.text, e.depth)
-              return
-            }
-            if (e.type === 'final') {
-              if (!t.finishStream(e.text, e.depth)) {
-                const s = formatEvent(e)
-                if (s) t.print(s)
+      const runText = async (task: string) => {
+        const ac = new AbortController()
+        currentAbort = ac
+        try {
+          await runAgent({
+            task,
+            model: state.model,
+            numCtx: state.numCtx,
+            messages: state.messages,
+            tools: allTools(),
+            session: state.session,
+            signal: ac.signal,
+            onEvent: e => {
+              if (e.type === 'usage') {
+                state.lastTokens = e.tokens
+                return
               }
-              return
-            }
-            t.endStream() // close any open stream before a tool/info block
-            const s = formatEvent(e)
-            if (s) t.print(s)
-          },
-        })
-      } finally {
-        currentAbort = null
+              if (e.type === 'stream') {
+                t.streamDelta(e.text, e.depth)
+                return
+              }
+              if (e.type === 'final') {
+                if (!t.finishStream(e.text, e.depth)) {
+                  const s = formatEvent(e)
+                  if (s) t.print(s)
+                }
+                return
+              }
+              t.endStream() // close any open stream before a tool/info block
+              const s = formatEvent(e)
+              if (s) t.print(s)
+            },
+          })
+        } finally {
+          currentAbort = null
+        }
       }
+      await runText(text)
+      // Drain prompts queued while this task ran (sequential, shared conversation context).
+      await drainQueue({
+        queue: state.queue,
+        run: async item => {
+          t.print(formatUserMessage(item.text))
+          await runText(item.text)
+          return 'ok'
+        },
+      })
     },
   })
   if (notes.length) ui.print(`${c.gray}loaded: ${notes.join(' · ')}${c.reset}`)
@@ -395,7 +446,7 @@ async function main() {
   }
   if (!session) session = new Session({ model: flags.model })
 
-  const state: State = { model: flags.model, numCtx: numCtx(), cwd: process.cwd(), session, messages, lastTokens: 0 }
+  const state: State = { model: flags.model, numCtx: numCtx(), cwd: process.cwd(), session, messages, lastTokens: 0, queue: new PromptQueue() }
 
   if (rest.length) {
     out(banner(state.model, baseUrl()))
