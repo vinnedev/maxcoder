@@ -2,9 +2,9 @@
 // Bun-native I/O via fsx. Simplified-but-robust analog of src/utils/sessionStorage.ts.
 
 import * as path from 'node:path'
-import { newId, projectDir } from './config.ts'
-import { appendLine, lastModified, listDir, readText, removeFile } from './fsx.ts'
-import type { ChatMessage } from './ollama.ts'
+import { newId, projectDir } from '../config.ts'
+import { appendLine, lastModified, listDir, readText, removeFile } from '../shared/fs/index.ts'
+import type { ChatMessage } from '../providers/ollama/index.ts'
 
 export interface TranscriptLine {
   uuid: string

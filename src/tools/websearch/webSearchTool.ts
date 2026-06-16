@@ -2,7 +2,7 @@
 // only sequences them: validate → cache → provider(resilient) → dedupe/rank → injection scan →
 // citations → response. Treats all web content as untrusted DATA.
 
-import { registerTool } from '../tools.ts'
+import { registerTool } from '../../tools.ts'
 import { webSearchConfig } from './config.ts'
 import { buildCitations } from './citations.ts'
 import { WebSearchCache } from './cache.ts'
@@ -65,6 +65,11 @@ export async function runWebSearch(rawArgs: Record<string, unknown>, signal?: Ab
     args0.reason = `answer the user's request: ${typeof args0.query === 'string' ? args0.query : ''}`.slice(0, 180)
   }
   if (!Number.isInteger(args0.max_results)) args0.max_results = config.maxResults
+  // Floor results: weak models often ask for max_results:1 and then miss the authoritative source.
+  const MIN_RESULTS = 4
+  if (Number.isInteger(args0.max_results) && (args0.max_results as number) < MIN_RESULTS) {
+    args0.max_results = Math.min(config.maxResults, MIN_RESULTS)
+  }
   const v = validateSearchArgs(args0, config.maxResults, config.safeSearch)
   if (!v.ok || !v.args) {
     logSearchEvent(config, { event: 'web_search', guardrail: v.error, blockedCount: v.blocked.length })

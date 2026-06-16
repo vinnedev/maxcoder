@@ -1,7 +1,7 @@
 // Unit tests for the datetime tool's date math + localization. Run: `bun test`.
 
 import { expect, test } from 'bun:test'
-import { addKey, dateKeyOf, datetimeTool, diffKeys, resolveTimezone } from '../src/datetimeTool.ts'
+import { addKey, dateKeyOf, datetimeTool, diffKeys, resolveTimezone } from '../../../src/tools/datetime/index.ts'
 
 const clock = () => new Date('2026-06-16T06:50:00Z') // 03:50 in America/Sao_Paulo (UTC-3)
 

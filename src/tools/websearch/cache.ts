@@ -1,6 +1,6 @@
 // web_search — WebSearchCache: local TTL cache (in-memory + disk JSON). TTL 0 disables.
 
-import { readJSON, writeText } from '../fsx.ts'
+import { readJSON, writeText } from '../../shared/fs/index.ts'
 import type { WebSearchResponse } from './types.ts'
 
 interface Entry {

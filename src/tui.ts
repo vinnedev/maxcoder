@@ -13,7 +13,7 @@
 //       Ctrl-O copy mode enables native text selection while wheel/↑↓ scroll the transcript.
 
 import { c, centeredLogo, NAME, VERSION } from './brand.ts'
-import { CLI_OPTIONS, SLASH_COMMANDS, formatUserMessage, statusLine } from './ui.ts'
+import { CLI_OPTIONS, SLASH_COMMANDS, formatAssistantHeader, formatAssistantText, formatUserMessage, statusLine } from './ui.ts'
 
 const ALT_ON = '\x1b[?1049h'
 const ALT_OFF = '\x1b[?1049l'
@@ -135,6 +135,7 @@ export class Tui {
   private blocks: string[] = [] // raw styled content blocks (may contain \n)
   private streamOpen = false
   private streamIdx = -1
+  private streamDepth = 0
   private lines: string[] = [] // wrapped display rows
   private scroll = 0 // rows scrolled up from the bottom (0 = follow latest)
   private input = ''
@@ -203,9 +204,10 @@ export class Tui {
   }
 
   /** Append a live token delta into the current streaming answer block. */
-  streamDelta(text: string): void {
+  streamDelta(text: string, depth = 0): void {
     if (!this.streamOpen) {
-      this.blocks.push(c.green)
+      this.streamDepth = depth
+      this.blocks.push(`\n${formatAssistantHeader(depth)}\n`)
       this.streamIdx = this.blocks.length - 1
       this.streamOpen = true
     }
@@ -217,9 +219,21 @@ export class Tui {
   /** Close the streaming block. Returns true if a stream was open (text already shown). */
   endStream(): boolean {
     if (!this.streamOpen) return false
-    this.blocks[this.streamIdx] += c.reset
     this.streamOpen = false
     this.streamIdx = -1
+    this.streamDepth = 0
+    this.reflow()
+    this.render()
+    return true
+  }
+
+  /** Replace an open streamed block with the final formatted markdown answer. */
+  finishStream(text: string, depth = this.streamDepth): boolean {
+    if (!this.streamOpen) return false
+    this.blocks[this.streamIdx] = `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}\n`
+    this.streamOpen = false
+    this.streamIdx = -1
+    this.streamDepth = 0
     this.reflow()
     this.render()
     return true

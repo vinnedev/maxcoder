@@ -1,18 +1,18 @@
 #!/usr/bin/env bun
 // Max Coder — CLI entrypoint. Sessions, context, system prompts, tools/skills/agents/MCP, UI.
 
-import { runAgent, type AgentEvent } from './agent.ts'
+import { runAgent, type AgentEvent } from './core/agent/index.ts'
 import { banner, c, centeredLogo, NAME, VERSION } from './brand.ts'
 import { gitBranch } from './config.ts'
-import { shell } from './fsx.ts'
-import { baseUrl, defaultModel, listModels, type ChatMessage } from './ollama.ts'
-import { loadMcpTools } from './mcp.ts'
-import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSummary } from './session.ts'
-import { loadSkills, registerSkillTool } from './skills.ts'
-import { loadAgentTypes, registerTaskTool } from './subagent.ts'
+import { shell } from './shared/fs/index.ts'
+import { baseUrl, defaultModel, listModels, type ChatMessage } from './providers/ollama/index.ts'
+import { loadMcpTools } from './tools/mcp/index.ts'
+import { cleanOldSessions, listSessions, resumeSession, Session, type SessionSummary } from './sessions/index.ts'
+import { loadSkills, registerSkillTool } from './tools/skills/index.ts'
+import { loadAgentTypes, registerTaskTool } from './tools/subagent/index.ts'
 import { allTools, registerBuiltins } from './tools.ts'
 import { Tui } from './tui.ts'
-import { formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui.ts'
+import { formatAssistantHeader, formatEvent, formatShellCommand, formatShellResult, formatUserMessage, helpText, renderEvent, statusLine } from './ui.ts'
 
 const out = (s: string) => process.stdout.write(s)
 
@@ -41,7 +41,7 @@ async function initRegistry(opts: { mcp: boolean }): Promise<string[]> {
   await registerTaskTool()
   try {
     // web_search is ON by default; registerWebTools() self-gates on WEB_SEARCH_ENABLED (default true).
-    const { registerWebTools } = await import('./websearch/webSearchTool.ts')
+    const { registerWebTools } = await import('./tools/websearch/webSearchTool.ts')
     const web = registerWebTools()
     if (web.registered) notes.push(`${web.registered} web tool(s) [${web.provider}]`)
   } catch (e) {
@@ -66,6 +66,7 @@ function makeHandler(state: State): (e: AgentEvent) => void {
       return
     }
     if (e.type === 'stream') {
+      if (!streaming) out(`\n${formatAssistantHeader(e.depth)}\n`)
       out(e.text) // live token stream (no newline)
       streaming = true
       return
@@ -180,7 +181,7 @@ const SLASH_COMMANDS: Record<string, SlashHandler> = {
     p(`${c.green}new session #${state.session.id.slice(0, 8)}${c.reset}\n`)
   },
   compact: async (state, _a, p) => {
-    const { compact } = await import('./context.ts')
+    const { compact } = await import('./core/context/index.ts')
     const r = await compact(state.messages, state.model, state.numCtx)
     state.messages.splice(0, state.messages.length, ...r.messages)
     state.session.recordCompaction(r.summary)
@@ -297,11 +298,11 @@ async function tui(state: State, notes: string[]) {
               return
             }
             if (e.type === 'stream') {
-              t.streamDelta(e.text)
+              t.streamDelta(e.text, e.depth)
               return
             }
             if (e.type === 'final') {
-              if (!t.endStream()) {
+              if (!t.finishStream(e.text, e.depth)) {
                 const s = formatEvent(e)
                 if (s) t.print(s)
               }

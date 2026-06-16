@@ -2,12 +2,12 @@
 // context auto-compaction, layered system prompt, and subagent recursion.
 // Analog of src/query.ts (drastically simplified).
 
-import { compact, shouldCompact, usage } from './context.ts'
-import { chat, type ChatMessage, type ToolCall } from './ollama.ts'
-import type { Session } from './session.ts'
-import { getAgentType } from './subagent.ts'
-import { buildSystemPrompt } from './systemPrompt.ts'
-import { executeTool, toolDefs, toolInfos, type Tool, type ToolContext } from './tools.ts'
+import { compact, shouldCompact, usage } from '../context/index.ts'
+import { chat, type ChatMessage, type ToolCall } from '../../providers/ollama/index.ts'
+import type { Session } from '../../sessions/index.ts'
+import { getAgentType } from '../../tools/subagent/index.ts'
+import { buildSystemPrompt } from '../prompt/index.ts'
+import { executeTool, toolDefs, toolInfos, type Tool, type ToolContext } from '../../tools.ts'
 
 export type AgentEvent =
   | { type: 'stream'; text: string; depth: number }

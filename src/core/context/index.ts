@@ -1,7 +1,7 @@
 // Max Coder — context management: token estimation + auto-compaction.
 // Simplified analog of src/services/compact/* and src/query/tokenBudget.ts.
 
-import { chat, type ChatMessage } from './ollama.ts'
+import { chat, type ChatMessage } from '../../providers/ollama/index.ts'
 
 const KEEP_RECENT = 6 // messages kept verbatim after a compaction
 const COMPACT_THRESHOLD = 0.75 // compact when estimated usage exceeds this fraction of num_ctx

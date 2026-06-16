@@ -3,10 +3,10 @@
 // Analog of src/tools/AgentTool/* (simplified).
 
 import * as path from 'node:path'
-import { agentsDir } from './config.ts'
-import { listDir, readText } from './fsx.ts'
-import { parseFrontmatter } from './skills.ts'
-import { registerTool } from './tools.ts'
+import { agentsDir } from '../../config.ts'
+import { listDir, readText } from '../../shared/fs/index.ts'
+import { parseFrontmatter } from '../skills/index.ts'
+import { registerTool } from '../../tools.ts'
 
 export interface AgentType {
   name: string

@@ -2,9 +2,10 @@
 // Run: `bun test`
 
 import { expect, test } from 'bun:test'
-import { contextTokens, estimateTokens, messageTokens } from '../src/context.ts'
-import { parseFrontmatter } from '../src/skills.ts'
+import { contextTokens, estimateTokens, messageTokens } from '../src/core/context/index.ts'
+import { parseFrontmatter } from '../src/tools/skills/index.ts'
 import { completeInput, suggestInput } from '../src/tui.ts'
+import { formatEvent } from '../src/ui.ts'
 
 test('estimateTokens ~ chars/4', () => {
   expect(estimateTokens('')).toBe(0)
@@ -70,4 +71,12 @@ test('suggestInput returns visible slash and flag suggestions while typing', () 
   expect(suggestInput('/cl', 3)).toContain('/clean')
   expect(suggestInput('/he', 3)).toEqual(['/help'])
   expect(suggestInput('--', 2)).toContain('--model')
+})
+
+test('assistant final event includes role label and formats markdown', () => {
+  const out = (formatEvent({ type: 'final', text: '# Title\n- item with `code`', depth: 0 }) ?? '').replace(/\x1b\[[0-9;]*m/g, '')
+  expect(out).toContain('assistant')
+  expect(out).toContain('Title')
+  expect(out).toContain('• item with')
+  expect(out).toContain('code')
 })

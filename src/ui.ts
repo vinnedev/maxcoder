@@ -1,7 +1,7 @@
 // Max Coder — UI helpers shared by the plain REPL and the full-screen TUI.
 
 import { c } from './brand.ts'
-import type { AgentEvent } from './agent.ts'
+import type { AgentEvent } from './core/agent/index.ts'
 
 const out = (s: string) => process.stdout.write(s)
 
@@ -91,6 +91,10 @@ export function formatUserMessage(text: string): string {
   return `${badge('user', c.magenta)}\n${text}\n`
 }
 
+export function formatAssistantHeader(depth = 0): string {
+  return `${indent(depth)}${badge(depth > 0 ? 'subagent' : 'assistant', depth > 0 ? c.cyan : c.green)}`
+}
+
 export function formatShellCommand(command: string): string {
   return `${badge('shell', c.yellow)} ${c.gray}$${c.reset} ${command}`
 }
@@ -151,6 +155,10 @@ export function formatAssistantText(text: string, depth = 0): string {
   }
 
   return out.join('\n')
+}
+
+export function formatAssistantMessage(text: string, depth = 0): string {
+  return `\n${formatAssistantHeader(depth)}\n${formatAssistantText(text, depth)}\n`
 }
 
 function summarizeArgs(args: Record<string, unknown>): string {
@@ -214,7 +222,7 @@ const EVENT_FORMATTERS: Partial<Record<AgentEvent['type'], EventFormatter>> = {
   },
   final: ev => {
     const e = ev as Extract<AgentEvent, { type: 'final' }>
-    return `\n${indent(e.depth)}${badge(e.depth > 0 ? 'subagent' : 'assistant', e.depth > 0 ? c.cyan : c.green)}\n${formatAssistantText(e.text, e.depth)}\n`
+    return formatAssistantMessage(e.text, e.depth)
   },
   info: ev => {
     const e = ev as Extract<AgentEvent, { type: 'info' }>

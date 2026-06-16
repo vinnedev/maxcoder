@@ -1,7 +1,7 @@
 // web_search — ContentExtractor: strip HTML to readable main text + title + published date.
 // Pure string processing (no DOM, no JS execution).
 
-import { decodeEntities } from '../shared/html/index.ts'
+import { decodeEntities } from '../../shared/html/index.ts'
 
 export interface ExtractedContent {
   title: string

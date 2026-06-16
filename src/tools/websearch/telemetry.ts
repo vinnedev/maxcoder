@@ -1,7 +1,7 @@
 // web_search — WebSearchTelemetry: safe, redacted logging. Never logs cookies, headers, tokens,
 // full HTML, or large page content. Query is logged only after guardrails cleared it as non-secret.
 
-import { appendLine } from '../fsx.ts'
+import { appendLine } from '../../shared/fs/index.ts'
 import type { WebSearchConfig } from './config.ts'
 
 export interface SearchLogEvent {

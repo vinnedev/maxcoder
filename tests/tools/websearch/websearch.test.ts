@@ -2,13 +2,13 @@
 // cache, provider mock, and extraction. Run: `bun test`.
 
 import { expect, test } from 'bun:test'
-import { WebSearchCache } from '../../src/websearch/cache.ts'
-import { extractReadable } from '../../src/websearch/extractor.ts'
-import { classifySource, dedupe, freshnessScore, rankResults, reliabilityScore } from '../../src/websearch/ranker.ts'
-import { detectInjection, neutralizeText, sanitizeContent } from '../../src/websearch/injection.ts'
-import { MockSearchProvider } from '../../src/websearch/providers/mock.ts'
-import { validatePublicUrl, validateSearchArgs } from '../../src/websearch/guardrails.ts'
-import type { NormalizedWebSearchArgs, ProviderSearchResult, WebSearchResponse } from '../../src/websearch/types.ts'
+import { WebSearchCache } from '../../../src/tools/websearch/cache.ts'
+import { extractReadable } from '../../../src/tools/websearch/extractor.ts'
+import { classifySource, dedupe, freshnessScore, rankResults, reliabilityScore } from '../../../src/tools/websearch/ranker.ts'
+import { detectInjection, neutralizeText, sanitizeContent } from '../../../src/tools/websearch/injection.ts'
+import { MockSearchProvider } from '../../../src/tools/websearch/providers/mock.ts'
+import { validatePublicUrl, validateSearchArgs } from '../../../src/tools/websearch/guardrails.ts'
+import type { NormalizedWebSearchArgs, ProviderSearchResult, WebSearchResponse } from '../../../src/tools/websearch/types.ts'
 
 // ---- input guardrails / schema ----
 const base = { query: 'node lts version', reason: 'need current node version', max_results: 5 }

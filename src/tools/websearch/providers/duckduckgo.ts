@@ -2,7 +2,7 @@
 // Honors the spec's "DuckDuckGo fallback, se viável" — used as the default so web_search works
 // out of the box. For heavier/robust use, prefer self-hosted SearxNG (WEB_SEARCH_PROVIDER=searxng).
 
-import { stripTags } from '../../shared/html/index.ts'
+import { stripTags } from '../../../shared/html/index.ts'
 import type { NormalizedWebSearchArgs, ProviderSearchResult, SearchProvider } from '../types.ts'
 
 // DDG's HTML endpoint expects a browser-like UA.
@@ -25,11 +25,22 @@ function decodeUddg(href: string): string {
   return href
 }
 
-/** Map an optional country/language pair to a DDG region code, e.g. BR + pt → 'br-pt'. */
+/**
+ * Map an optional country/language pair to a DDG region code, e.g. BR + pt → 'br-pt'.
+ * Tolerates models that pass a LOCALE as the country (e.g. 'pt-BR' → country 'br', lang 'pt').
+ * Returns undefined (global search) when the country can't be resolved to a 2-letter code.
+ */
 function regionParam(args: NormalizedWebSearchArgs): string | undefined {
-  if (!args.country) return undefined
-  const lang = (args.language || '').split('-')[0].toLowerCase()
-  return `${args.country.toLowerCase()}-${lang || args.country.toLowerCase()}`
+  let country = (args.country || '').trim().toLowerCase()
+  let lang = (args.language || '').split(/[-_]/)[0].toLowerCase()
+  if (country.includes('-') || country.includes('_')) {
+    const parts = country.split(/[-_]/)
+    if (!lang) lang = parts[0]
+    country = parts[parts.length - 1] // 'pt-br' -> 'br'
+  }
+  if (!/^[a-z]{2}$/.test(country)) return undefined
+  if (!/^[a-z]{2}$/.test(lang)) lang = country
+  return `${country}-${lang}`
 }
 
 export class DuckDuckGoProvider implements SearchProvider {

@@ -3,8 +3,8 @@
 
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { gitStatusShort } from './config.ts'
-import { readText } from './fsx.ts'
+import { gitStatusShort } from '../../config.ts'
+import { readText } from '../../shared/fs/index.ts'
 
 const MEMORY_FILES = ['MAXCODER.md', 'AGENTS.md', 'CLAUDE.md']
 const MAX_MEMORY_BYTES = 20_000

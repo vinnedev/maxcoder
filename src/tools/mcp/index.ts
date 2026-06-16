@@ -5,9 +5,9 @@
 // mcp.json shape:
 //   { "mcpServers": { "fs": { "command": "npx", "args": ["-y","@modelcontextprotocol/server-filesystem","."] } } }
 
-import { mcpConfigPath } from './config.ts'
-import { readJSON } from './fsx.ts'
-import { registerTool } from './tools.ts'
+import { mcpConfigPath } from '../../config.ts'
+import { readJSON } from '../../shared/fs/index.ts'
+import { registerTool } from '../../tools.ts'
 
 interface ServerCfg {
   command: string

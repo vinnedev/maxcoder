@@ -2,7 +2,7 @@
 // Run: `bun test`  (from maxcoder/)
 
 import { expect, test } from 'bun:test'
-import { parseEmulatedToolCalls } from '../src/ollama.ts'
+import { parseEmulatedToolCalls } from '../../../src/providers/ollama/index.ts'
 
 const names = ['read_file', 'write_file', 'edit_file']
 

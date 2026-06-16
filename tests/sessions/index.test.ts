@@ -3,7 +3,7 @@
 import { expect, test } from 'bun:test'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { pickSession, Session, type SessionSummary } from '../src/session.ts'
+import { pickSession, Session, type SessionSummary } from '../../src/sessions/index.ts'
 
 process.env.MAXCODER_CONFIG_DIR = path.join(os.tmpdir(), `maxcoder-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 

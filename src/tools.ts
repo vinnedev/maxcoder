@@ -3,9 +3,9 @@
 // (the "create + customize" backbone). Analog of src/Tool.ts + src/tools.ts (simplified).
 
 import * as path from 'node:path'
-import { exists, listDir, readText, sh, shell, writeText } from './fsx.ts'
-import type { ToolDef } from './ollama.ts'
-import { DATETIME_DESCRIPTION, DATETIME_SCHEMA, datetimeTool } from './datetimeTool.ts'
+import { exists, listDir, readText, sh, shell, writeText } from './shared/fs/index.ts'
+import type { ToolDef } from './providers/ollama/index.ts'
+import { DATETIME_DESCRIPTION, DATETIME_SCHEMA, datetimeTool } from './tools/datetime/index.ts'
 
 export interface ToolContext {
   cwd: string
